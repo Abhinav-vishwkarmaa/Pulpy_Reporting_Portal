@@ -63,8 +63,8 @@ export class PostbackService {
       const publisherId = click ? click.publisher_id : null;
       const publisherOfferId = click ? click.publisher_offer_id : null;
       
-      // Get payout
-      let payout = parseFloat(offer.affiliate_model_cost);
+      // Get payout (use affiliate_amount)
+      let payout = parseFloat(offer.affiliate_amount);
       if (publisherOfferId) {
         const assignmentPayout = await assignmentService.getPayout(publisherOfferId);
         if (assignmentPayout) {
@@ -85,6 +85,39 @@ export class PostbackService {
         timestamp: new Date().toISOString(),
       };
       
+      // Cap checks before inserting conversion
+      const capExceeded = await this.isCapExceeded(offer);
+      if (capExceeded) {
+        // Insert rejected_cap record (no payout, no stats)
+        const conversionUuid = uuidv4();
+        await pool.query(
+          `INSERT INTO conversions (
+            conversion_uuid, click_uuid, offer_id, publisher_id, publisher_offer_id,
+            rcid, status, amount, payout, ip, postback_payload, timestamp, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW(), NOW())`,
+          [
+            conversionUuid,
+            click ? click.click_uuid : null,
+            offerId,
+            publisherId,
+            publisherOfferId,
+            rcid || click?.rcid || uuidv4(),
+            'rejected_cap',
+            0,
+            0,
+            ip,
+            JSON.stringify(postbackPayload),
+          ]
+        );
+
+        return {
+          success: false,
+          message: 'Conversion rejected due to cap exceeded',
+          conversion: null,
+          duplicate: false,
+        };
+      }
+
       // Insert conversion
       const conversionUuid = uuidv4();
       const [insertResult] = await pool.query(
@@ -152,6 +185,47 @@ export class PostbackService {
     } catch (error) {
       logger.error('PostbackService.updateDailyStats error:', error);
     }
+  }
+
+  async isCapExceeded(offer) {
+    // Total cap
+    if (offer.total_cap && offer.total_cap > 0) {
+      const [rows] = await pool.query('SELECT COUNT(*) AS cnt FROM conversions WHERE offer_id = ?', [offer.id]);
+      const totalCount = parseInt((Array.isArray(rows) ? rows[0] : rows).cnt || 0);
+      if (totalCount >= offer.total_cap) return true;
+    }
+
+    const capType = offer.capping_type || 'none';
+    if (capType === 'none') return false;
+
+    if (capType === 'daily' && offer.daily_cap && offer.daily_cap > 0) {
+      const [rows] = await pool.query(
+        'SELECT COUNT(*) AS cnt FROM conversions WHERE offer_id = ? AND DATE(created_at) = CURDATE()',
+        [offer.id]
+      );
+      const count = parseInt((Array.isArray(rows) ? rows[0] : rows).cnt || 0);
+      if (count >= offer.daily_cap) return true;
+    }
+
+    if (capType === 'monthly' && offer.monthly_cap && offer.monthly_cap > 0) {
+      const [rows] = await pool.query(
+        'SELECT COUNT(*) AS cnt FROM conversions WHERE offer_id = ? AND YEAR(created_at)=YEAR(NOW()) AND MONTH(created_at)=MONTH(NOW())',
+        [offer.id]
+      );
+      const count = parseInt((Array.isArray(rows) ? rows[0] : rows).cnt || 0);
+      if (count >= offer.monthly_cap) return true;
+    }
+
+    if (capType === 'weekly' && offer.total_cap && offer.total_cap > 0) {
+      const [rows] = await pool.query(
+        'SELECT COUNT(*) AS cnt FROM conversions WHERE offer_id = ? AND YEARWEEK(created_at,1)=YEARWEEK(NOW(),1)',
+        [offer.id]
+      );
+      const count = parseInt((Array.isArray(rows) ? rows[0] : rows).cnt || 0);
+      if (count >= offer.total_cap) return true;
+    }
+
+    return false;
   }
 }
 

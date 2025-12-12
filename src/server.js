@@ -13,6 +13,8 @@ dotenv.config();
 // Import routes
 import authRoutes from './routes/auth.js';
 import adminRoutes from './routes/admin.js';
+import advertiserRoutes from './routes/advertiser.routes.js';
+import offerRoutes from './routes/offer.routes.js';
 import trackingRoutes from './routes/tracking.js';
 import postbackRoutes from './routes/postback.js';
 import reportRoutes from './routes/reports.js';
@@ -57,6 +59,8 @@ async function initializeServer() {
   // Register routes
   await fastify.register(authRoutes, { prefix: '/api/auth' });
   await fastify.register(adminRoutes, { prefix: '/api/admin' });
+  await fastify.register(advertiserRoutes);
+  await fastify.register(offerRoutes);
   await fastify.register(trackingRoutes);
   await fastify.register(postbackRoutes);
   await fastify.register(reportRoutes, { prefix: '/api/admin/reports' });

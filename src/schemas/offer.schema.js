@@ -1,0 +1,161 @@
+const timePattern = '^([01]\\d|2[0-3]):[0-5]\\d(:[0-5]\\d)?$';
+
+export const offerIdParamSchema = {
+  type: 'object',
+  required: ['id'],
+  properties: {
+    id: { type: 'integer', minimum: 1 },
+  },
+};
+
+export const changeOfferStatusSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['status'],
+  properties: {
+    status: { type: 'string', enum: ['live', 'paused', 'draft'] },
+  },
+};
+
+export const listOffersQuerySchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    status: { type: 'string', enum: ['live', 'paused', 'draft'] },
+    advertiser_id: { type: 'integer', minimum: 1 },
+    category: { type: 'string', maxLength: 100 },
+    search: { type: 'string', maxLength: 150 },
+    page: { type: 'integer', minimum: 1, default: 1 },
+    limit: { type: 'integer', minimum: 1, maximum: 100, default: 20 },
+  },
+};
+
+export const createOfferSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: [
+    'advertiser_id',
+    'name',
+    'offer_currency',
+    'country',
+    'advertiser_model',
+    'advertiser_amount',
+    'affiliate_model',
+    'affiliate_amount',
+    'offer_url',
+  ],
+  properties: {
+    advertiser_id: { type: 'integer', minimum: 1 },
+    name: { type: 'string', minLength: 2, maxLength: 150 },
+    description: { type: ['string', 'null'] },
+    category: { type: ['string', 'null'], maxLength: 100 },
+    status: { type: 'string', enum: ['live', 'paused', 'draft'], default: 'draft' },
+
+    offer_currency: { type: 'string', maxLength: 10 },
+    country: { type: 'string', maxLength: 100 },
+
+    advertiser_model: { type: 'string', maxLength: 50 },
+    advertiser_amount: { type: 'number' },
+    affiliate_model: { type: 'string', maxLength: 50 },
+    affiliate_amount: { type: 'number' },
+
+    offer_url: { type: 'string', format: 'uri', maxLength: 500 },
+    preview_url: { type: ['string', 'null'], format: 'uri', maxLength: 500 },
+    token_type: { type: ['string', 'null'], maxLength: 100 },
+    macros_json: { type: ['object', 'null'] },
+
+    start_date: { type: ['string', 'null'], format: 'date' },
+    end_date: { type: ['string', 'null'], format: 'date' },
+    start_time: { type: ['string', 'null'], pattern: timePattern },
+    end_time: { type: ['string', 'null'], pattern: timePattern },
+
+    ip_action: { type: ['string', 'null'], maxLength: 20 },
+    ip_list: { type: ['string', 'null'] },
+    device_targeting_json: { type: ['object', 'null'] },
+    os_targeting_json: { type: ['object', 'null'] },
+    browser_targeting_json: { type: ['object', 'null'] },
+    isp_targeting_json: { type: ['object', 'null'] },
+    carrier_targeting_json: { type: ['object', 'null'] },
+    city_targeting_json: { type: ['object', 'null'] },
+
+    capping_type: { type: 'string', enum: ['none', 'daily', 'monthly', 'weekly'], default: 'none' },
+    daily_cap: { type: ['integer', 'null'], minimum: 0 },
+    monthly_cap: { type: ['integer', 'null'], minimum: 0 },
+    total_cap: { type: ['integer', 'null'], minimum: 0 },
+    conversion_cap: { type: ['integer', 'null'], minimum: 0 },
+    budget_cap: { type: ['number', 'null'], minimum: 0 },
+    cap_action: { type: ['string', 'null'], enum: ['pause', 'fallback'] },
+
+    fallback_enabled: { type: ['integer', 'boolean'], enum: [0, 1, true, false] },
+    fallback_url: { type: ['string', 'null'], format: 'uri', maxLength: 500 },
+    fallback_offer_id: { type: ['integer', 'null'], minimum: 1 },
+
+    advertiser_postback_url: { type: ['string', 'null'], format: 'uri', maxLength: 500 },
+    advertiser_postback_method: { type: ['string', 'null'], maxLength: 10 },
+    advertiser_postback_macros_json: { type: ['object', 'null'] },
+    system_postback_url: { type: ['string', 'null'], format: 'uri', maxLength: 500 },
+    system_postback_method: { type: ['string', 'null'], maxLength: 10 },
+    system_postback_macros_json: { type: ['object', 'null'] },
+  },
+};
+
+export const updateOfferSchema = {
+  type: 'object',
+  additionalProperties: false,
+  minProperties: 1,
+  properties: {
+    advertiser_id: { type: 'integer', minimum: 1 },
+    name: { type: 'string', minLength: 2, maxLength: 150 },
+    description: { type: ['string', 'null'] },
+    category: { type: ['string', 'null'], maxLength: 100 },
+    status: { type: 'string', enum: ['live', 'paused', 'draft'] },
+
+    offer_currency: { type: 'string', maxLength: 10 },
+    country: { type: 'string', maxLength: 100 },
+
+    advertiser_model: { type: 'string', maxLength: 50 },
+    advertiser_amount: { type: 'number' },
+    affiliate_model: { type: 'string', maxLength: 50 },
+    affiliate_amount: { type: 'number' },
+
+    offer_url: { type: 'string', format: 'uri', maxLength: 500 },
+    preview_url: { type: ['string', 'null'], format: 'uri', maxLength: 500 },
+    token_type: { type: ['string', 'null'], maxLength: 100 },
+    macros_json: { type: ['object', 'null'] },
+
+    start_date: { type: ['string', 'null'], format: 'date' },
+    end_date: { type: ['string', 'null'], format: 'date' },
+    start_time: { type: ['string', 'null'], pattern: timePattern },
+    end_time: { type: ['string', 'null'], pattern: timePattern },
+
+    ip_action: { type: ['string', 'null'], maxLength: 20 },
+    ip_list: { type: ['string', 'null'] },
+    device_targeting_json: { type: ['object', 'null'] },
+    os_targeting_json: { type: ['object', 'null'] },
+    browser_targeting_json: { type: ['object', 'null'] },
+    isp_targeting_json: { type: ['object', 'null'] },
+    carrier_targeting_json: { type: ['object', 'null'] },
+    city_targeting_json: { type: ['object', 'null'] },
+
+    capping_type: { type: 'string', enum: ['none', 'daily', 'monthly', 'weekly'] },
+    daily_cap: { type: ['integer', 'null'], minimum: 0 },
+    monthly_cap: { type: ['integer', 'null'], minimum: 0 },
+    total_cap: { type: ['integer', 'null'], minimum: 0 },
+    conversion_cap: { type: ['integer', 'null'], minimum: 0 },
+    budget_cap: { type: ['number', 'null'], minimum: 0 },
+    cap_action: { type: ['string', 'null'], enum: ['pause', 'fallback'] },
+
+    fallback_enabled: { type: ['integer', 'boolean'], enum: [0, 1, true, false] },
+    fallback_url: { type: ['string', 'null'], format: 'uri', maxLength: 500 },
+    fallback_offer_id: { type: ['integer', 'null'], minimum: 1 },
+
+    advertiser_postback_url: { type: ['string', 'null'], format: 'uri', maxLength: 500 },
+    advertiser_postback_method: { type: ['string', 'null'], maxLength: 10 },
+    advertiser_postback_macros_json: { type: ['object', 'null'] },
+    system_postback_url: { type: ['string', 'null'], format: 'uri', maxLength: 500 },
+    system_postback_method: { type: ['string', 'null'], maxLength: 10 },
+    system_postback_macros_json: { type: ['object', 'null'] },
+  },
+};
+
+

@@ -13,6 +13,7 @@ const dbConfig = {
   queueLimit: 0,
   enableKeepAlive: true,
   keepAliveInitialDelay: 0,
+  multipleStatements: true, // needed for running migration files with multiple SQL statements
 };
 
 // Log database configuration (without password)
@@ -40,6 +41,7 @@ const pool = mysql.createPool({
   queueLimit: 0,
   enableKeepAlive: true,
   keepAliveInitialDelay: 0,
+  multipleStatements: true,
 });
 
 // Handle pool errors

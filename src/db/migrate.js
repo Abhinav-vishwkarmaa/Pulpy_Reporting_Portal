@@ -7,27 +7,29 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 async function runMigrations() {
-  const client = await pool.connect();
-  
+  const connection = await pool.getConnection();
   try {
-    await client.query('BEGIN');
-    
+    await connection.beginTransaction();
+
     const migrationFile = path.join(__dirname, 'migrations', '001_initial_schema.sql');
     const sql = fs.readFileSync(migrationFile, 'utf8');
-    
-    await client.query(sql);
-    
-    await client.query('COMMIT');
+
+    await connection.query(sql);
+
+    await connection.commit();
     console.log('Migration completed successfully');
   } catch (error) {
-    await client.query('ROLLBACK');
+    await connection.rollback();
     console.error('Migration failed:', error);
     throw error;
   } finally {
-    client.release();
+    connection.release();
     await pool.end();
   }
 }
 
-runMigrations().catch(console.error);
+runMigrations().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});
 

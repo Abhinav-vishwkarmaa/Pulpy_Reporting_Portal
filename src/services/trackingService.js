@@ -42,19 +42,25 @@ export class TrackingService {
         throw new Error('Assignment not found or inactive');
       }
       
-      // Check offer status
-      if (offer.status === 'pending') {
-        throw new Error('Offer is pending');
-      }
-      
-      // Check capping
-      const capping = await offerService.checkCapping(offerId, publisherId, assignment.id);
-      if (capping.capped) {
-        // Redirect to fallback URL
+      // Apply status and capping checks before recording click
+      const fallbackRedirect = await this.getFallbackRedirect(offer);
+
+      // Step 1: offer must be live
+      if (offer.status !== 'live') {
         return {
-          redirect: offer.fallback_url || offer.offer_url,
+          redirect: fallbackRedirect,
           clickId: null,
         };
+      }
+
+      // Step 2: total cap
+      if (await this.isTotalCapHit(offer)) {
+        return await this.applyCapAction(offer, fallbackRedirect);
+      }
+
+      // Step 3: capping_type specific
+      if (await this.isCappingTypeHit(offer)) {
+        return await this.applyCapAction(offer, fallbackRedirect);
       }
       
       // Parse device info
@@ -142,6 +148,65 @@ export class TrackingService {
       logger.error('TrackingService.trackClick error:', error);
       throw error;
     }
+  }
+  
+  async isTotalCapHit(offer) {
+    if (!offer.total_cap || offer.total_cap <= 0) return false;
+    const [rows] = await pool.query('SELECT COUNT(*) AS cnt FROM conversions WHERE offer_id = ?', [offer.id]);
+    const count = parseInt((Array.isArray(rows) ? rows[0] : rows).cnt || 0);
+    return count >= offer.total_cap;
+  }
+
+  async isCappingTypeHit(offer) {
+    const capType = offer.capping_type || 'none';
+    if (capType === 'none') return false;
+
+    let sql = '';
+    const params = [offer.id];
+
+    if (capType === 'daily' && offer.daily_cap != null && offer.daily_cap > 0) {
+      sql = 'SELECT COUNT(*) AS cnt FROM conversions WHERE offer_id = ? AND DATE(created_at) = CURDATE()';
+      const [rows] = await pool.query(sql, params);
+      const count = parseInt((Array.isArray(rows) ? rows[0] : rows).cnt || 0);
+      return count >= offer.daily_cap;
+    }
+
+    if (capType === 'monthly' && offer.monthly_cap != null && offer.monthly_cap > 0) {
+      sql = 'SELECT COUNT(*) AS cnt FROM conversions WHERE offer_id = ? AND YEAR(created_at)=YEAR(NOW()) AND MONTH(created_at)=MONTH(NOW())';
+      const [rows] = await pool.query(sql, params);
+      const count = parseInt((Array.isArray(rows) ? rows[0] : rows).cnt || 0);
+      return count >= offer.monthly_cap;
+    }
+
+    if (capType === 'weekly' && offer.total_cap != null && offer.total_cap > 0) {
+      sql = 'SELECT COUNT(*) AS cnt FROM conversions WHERE offer_id = ? AND YEARWEEK(created_at,1)=YEARWEEK(NOW(),1)';
+      const [rows] = await pool.query(sql, params);
+      const count = parseInt((Array.isArray(rows) ? rows[0] : rows).cnt || 0);
+      return count >= offer.total_cap;
+    }
+
+    return false;
+  }
+
+  async applyCapAction(offer, fallbackRedirect) {
+    const action = offer.cap_action || 'fallback';
+    if (action === 'pause') {
+      await pool.query('UPDATE offers SET status = ?, updated_at = NOW() WHERE id = ?', ['paused', offer.id]);
+    }
+    return {
+      redirect: fallbackRedirect,
+      clickId: null,
+    };
+  }
+
+  async getFallbackRedirect(offer) {
+    if (offer.fallback_url) return offer.fallback_url;
+    if (offer.fallback_offer_id) {
+      const [rows] = await pool.query('SELECT offer_url FROM offers WHERE id = ? LIMIT 1', [offer.fallback_offer_id]);
+      const fb = Array.isArray(rows) ? rows[0] : rows;
+      if (fb?.offer_url) return fb.offer_url;
+    }
+    return offer.offer_url;
   }
   
   async trackImpression(query, request) {
