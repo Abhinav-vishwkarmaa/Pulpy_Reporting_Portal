@@ -6,7 +6,7 @@ import logger from '../utils/logger.js';
 import { createErrorResponse } from '../utils/errorResponse.js';
 import { createOfferSchema, updateOfferStatusSchema } from '../validators/offerValidator.js';
 import { updateOfferSchema } from '../validators/offerValidator.js';
-import { updatePublisherSchema } from '../validators/publisherValidator.js';
+import { createPublisherSchema, updatePublisherSchema } from '../validators/publisherValidator.js';
 import { createAssignmentSchema } from '../validators/assignmentValidator.js';
 import { testConversionSchema } from '../validators/trackingValidator.js';
 
@@ -14,13 +14,31 @@ export class AdminController {
   // Publisher endpoints
   async createPublisher(request, reply) {
     try {
-      const publisher = await publisherService.create(request.body);
+      const { error, value } = createPublisherSchema.validate(request.body, {
+        abortEarly: false,
+        stripUnknown: true,
+      });
+
+      if (error) {
+        const validationErrors = error.details.map((detail) => ({
+          field: detail.path.join('.'),
+          message: detail.message,
+        }));
+        return reply.code(400).send({
+          success: false,
+          error: 'Validation Error',
+          message: 'Request validation failed',
+          details: validationErrors,
+        });
+      }
+
+      const publisher = await publisherService.create(value);
       return reply.code(201).send({
         success: true,
         data: publisher,
       });
     } catch (error) {
-      if (error.code === '23505') {
+      if (error.code === 'ER_DUP_ENTRY' || error.code === '23505') {
         return reply.code(409).send({
           success: false,
           error: 'Conflict',
@@ -269,7 +287,7 @@ export class AdminController {
   
   async getOffer(request, reply) {
     try {
-      const offer = await offerService.findById(request.params.id);
+      const offer = await offerService.findByIdWithDetails(request.params.id);
       if (!offer) {
         return reply.code(404).send({
           success: false,
@@ -351,10 +369,24 @@ export class AdminController {
         });
       }
 
-      const assignment = await assignmentService.create(value);
+      const result = await assignmentService.create(value);
+      
+      // Handle multi-publisher response format
+      if (result.assignments) {
+        return reply.code(201).send({
+          success: true,
+          data: result.assignments,
+          errors: result.errors,
+          message: result.errors && result.errors.length > 0 
+            ? `Created ${result.assignments.length} assignment(s) with ${result.errors.length} error(s)`
+            : `Successfully created ${result.assignments.length} assignment(s)`,
+        });
+      }
+      
+      // Single assignment response (legacy format)
       return reply.code(201).send({
         success: true,
-        data: assignment,
+        data: result,
       });
     } catch (error) {
       logger.error('AdminController.createAssignment error:', error);

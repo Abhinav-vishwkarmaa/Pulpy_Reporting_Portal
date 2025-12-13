@@ -13,6 +13,9 @@ async function reportRoutes(fastify, options) {
   fastify.get('/summary', reportController.getSummary);
   
   fastify.get('/detailed', reportController.getDetailed);
+  
+  // Publisher conversion statistics
+  fastify.get('/publisher-conversions', reportController.getPublisherConversionStats);
 }
 
 export default reportRoutes;

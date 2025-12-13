@@ -1,8 +1,9 @@
 {
   "info": {
-    "name": "BNG MIS Reporting Portal",
-    "description": "API collection with JWT auth. Bodies include required fields for each route.",
-    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+    "name": "BNG MIS Reporting Portal - Complete API Collection",
+    "description": "Complete API collection with all routes including Publishers, Offers, Advertisers, Assignments, Tracking, Postback, and Reporting. Supports both Basic Auth and JWT Bearer tokens.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "version": "2.0.0"
   },
   "auth": {
     "type": "bearer",
@@ -15,8 +16,9 @@
     ]
   },
   "variable": [
-    { "key": "base_url", "value": "http://localhost:5000", "type": "string" },
-    { "key": "auth_token", "value": "", "type": "string" }
+    { "key": "base_url", "value": "http://localhost:3000", "type": "string" },
+    { "key": "auth_token", "value": "", "type": "string" },
+    { "key": "basic_auth", "value": "Basic YWRtaW5AYm5nLmNvbTphZG1pbjEyMw==", "type": "string", "description": "Base64 encoded admin@bng.com:admin123" }
   ],
   "item": [
     {
@@ -85,6 +87,70 @@
       ]
     },
     {
+      "name": "Admin - Publishers",
+      "item": [
+        {
+          "name": "Create Publisher",
+          "request": {
+            "auth": { "type": "basic", "basic": [{ "key": "username", "value": "admin@bng.com", "type": "string" }, { "key": "password", "value": "admin123", "type": "string" }] },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"publisher@example.com\",\n  \"first_name\": \"John\",\n  \"company_name\": \"Example Media\",\n  \"country\": \"US\",\n  \"password\": \"password123\",\n  \"global_postback_url\": \"https://publisher.com/postback?click_id={click_id}&payout={payout}\"\n}"
+            },
+            "url": { "raw": "{{base_url}}/api/admin/publishers", "host": ["{{base_url}}"], "path": ["api","admin","publishers"] }
+          }
+        },
+        {
+          "name": "Update Publisher",
+          "request": {
+            "auth": { "type": "basic", "basic": [{ "key": "username", "value": "admin@bng.com", "type": "string" }, { "key": "password", "value": "admin123", "type": "string" }] },
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"newemail@example.com\",\n  \"first_name\": \"Jane\",\n  \"company_name\": \"New Company\",\n  \"country\": \"UK\",\n  \"password\": \"newpassword123\",\n  \"global_postback_url\": \"https://newurl.com/postback\",\n  \"status\": \"active\"\n}"
+            },
+            "url": { "raw": "{{base_url}}/api/admin/publishers/:id", "host": ["{{base_url}}"], "path": ["api","admin","publishers",":id"], "variable": [{ "key": "id", "value": "1" }] }
+          }
+        },
+        {
+          "name": "Get Publisher",
+          "request": {
+            "auth": { "type": "basic", "basic": [{ "key": "username", "value": "admin@bng.com", "type": "string" }, { "key": "password", "value": "admin123", "type": "string" }] },
+            "method": "GET",
+            "url": { "raw": "{{base_url}}/api/admin/publishers/:id", "host": ["{{base_url}}"], "path": ["api","admin","publishers",":id"], "variable": [{ "key": "id", "value": "1" }] }
+          }
+        },
+        {
+          "name": "List Publishers",
+          "request": {
+            "auth": { "type": "basic", "basic": [{ "key": "username", "value": "admin@bng.com", "type": "string" }, { "key": "password", "value": "admin123", "type": "string" }] },
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/admin/publishers?status=active&page=1&limit=50",
+              "host": ["{{base_url}}"],
+              "path": ["api","admin","publishers"],
+              "query": [
+                { "key": "status", "value": "active", "description": "Filter by status: pending, active, suspended" },
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "50" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Delete Publisher",
+          "request": {
+            "auth": { "type": "basic", "basic": [{ "key": "username", "value": "admin@bng.com", "type": "string" }, { "key": "password", "value": "admin123", "type": "string" }] },
+            "method": "DELETE",
+            "url": { "raw": "{{base_url}}/api/admin/publishers/:id", "host": ["{{base_url}}"], "path": ["api","admin","publishers",":id"], "variable": [{ "key": "id", "value": "1" }] }
+          }
+        }
+      ]
+    },
+    {
       "name": "Admin - Advertisers",
       "item": [
         {
@@ -127,13 +193,11 @@
             "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{auth_token}}", "type": "string" }] },
             "method": "GET",
             "url": {
-              "raw": "{{base_url}}/api/admin/advertisers?status=active&country=US&search=acme&page=1&limit=20",
+              "raw": "{{base_url}}/api/admin/advertisers?status=active&page=1&limit=20",
               "host": ["{{base_url}}"],
               "path": ["api","admin","advertisers"],
               "query": [
                 { "key": "status", "value": "active" },
-                { "key": "country", "value": "US" },
-                { "key": "search", "value": "acme" },
                 { "key": "page", "value": "1" },
                 { "key": "limit", "value": "20" }
               ]
@@ -141,7 +205,7 @@
           }
         },
         {
-          "name": "Delete (Soft) Advertiser",
+          "name": "Delete Advertiser",
           "request": {
             "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{auth_token}}", "type": "string" }] },
             "method": "DELETE",
@@ -151,96 +215,30 @@
       ]
     },
     {
-      "name": "Admin - Publishers",
-      "item": [
-        {
-          "name": "Create Publisher (email required)",
-          "request": {
-            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{auth_token}}", "type": "string" }] },
-            "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"email\": \"publisher@example.com\",\n  \"mobile\": \"+919876543210\",\n  \"first_name\": \"Amit\",\n  \"last_name\": \"Sharma\",\n  \"company_name\": \"Amit Media Pvt Ltd\",\n  \"position\": \"Affiliate Manager\",\n  \"address\": \"123 Business Street, Sector 12\",\n  \"state\": \"Maharashtra\",\n  \"country\": \"IN\",\n  \"zip_code\": \"400001\",\n  \"tax_invoice_details\": {\n    \"gst_number\": \"27ABCDE1234F1Z5\",\n    \"billing_name\": \"Amit Media Pvt Ltd\",\n    \"billing_address\": \"123 Business Street, Sector 12, Mumbai\"\n  },\n  \"payment_terms\": {\n    \"payment_cycle\": \"NET30\",\n    \"preferred_method\": \"bank_transfer\",\n    \"bank_details\": {\n      \"account_name\": \"Amit Media Pvt Ltd\",\n      \"account_number\": \"1234567890\",\n      \"ifsc\": \"HDFC0000123\",\n      \"bank_name\": \"HDFC Bank\"\n    }\n  },\n  \"global_postback_url\": \"https://publisher.com/postback?click_id={click_id}&payout={payout}\",\n  \"status\": \"pending\"\n}"
-            },
-            "url": { "raw": "{{base_url}}/api/admin/publishers", "host": ["{{base_url}}"], "path": ["api","admin","publishers"] }
-          }
-        },
-        {
-          "name": "Update Publisher",
-          "request": {
-            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{auth_token}}", "type": "string" }] },
-            "method": "PATCH",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"mobile\": \"+919999999999\",\n  \"first_name\": \"Updated\",\n  \"status\": \"active\"\n}"
-            },
-            "url": { "raw": "{{base_url}}/api/admin/publishers/:id", "host": ["{{base_url}}"], "path": ["api","admin","publishers",":id"], "variable": [{ "key": "id", "value": "1" }] }
-          }
-        },
-        {
-          "name": "Get Publisher",
-          "request": {
-            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{auth_token}}", "type": "string" }] },
-            "method": "GET",
-            "url": { "raw": "{{base_url}}/api/admin/publishers/:id", "host": ["{{base_url}}"], "path": ["api","admin","publishers",":id"], "variable": [{ "key": "id", "value": "1" }] }
-          }
-        },
-        {
-          "name": "List Publishers",
-          "request": {
-            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{auth_token}}", "type": "string" }] },
-            "method": "GET",
-            "url": {
-              "raw": "{{base_url}}/api/admin/publishers?status=active&email=publisher@example.com&company_name=Amit Media&page=1&limit=20",
-              "host": ["{{base_url}}"],
-              "path": ["api","admin","publishers"],
-              "query": [
-                { "key": "status", "value": "active" },
-                { "key": "email", "value": "publisher@example.com" },
-                { "key": "company_name", "value": "Amit Media" },
-                { "key": "page", "value": "1" },
-                { "key": "limit", "value": "20" }
-              ]
-            }
-          }
-        },
-        {
-          "name": "Delete Publisher (soft)",
-          "request": {
-            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{auth_token}}", "type": "string" }] },
-            "method": "DELETE",
-            "url": { "raw": "{{base_url}}/api/admin/publishers/:id", "host": ["{{base_url}}"], "path": ["api","admin","publishers",":id"], "variable": [{ "key": "id", "value": "1" }] }
-          }
-        }
-      ]
-    },
-    {
       "name": "Admin - Offers",
       "item": [
         {
-          "name": "Create Offer (all required fields included)",
+          "name": "Create Offer",
           "request": {
             "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{auth_token}}", "type": "string" }] },
             "method": "POST",
             "header": [{ "key": "Content-Type", "value": "application/json" }],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"advertiser_id\": 1,\n  \"name\": \"Spring Promo\",\n  \"offer_currency\": \"USD\",\n  \"country\": \"US\",\n  \"advertiser_model\": \"CPL\",\n  \"advertiser_amount\": 25.00,\n  \"affiliate_model\": \"CPL\",\n  \"affiliate_amount\": 15.00,\n  \"offer_url\": \"https://example.com/offer\",\n  \"description\": \"50% off trial\",\n  \"category\": \"Shopping\",\n  \"status\": \"draft\",\n  \"preview_url\": \"https://example.com/preview\",\n  \"token_type\": \"click_id\",\n  \"macros_json\": { \"click_id\": \"{click_id}\", \"pub_id\": \"{pub_id}\" },\n  \"start_date\": \"2025-01-10\",\n  \"end_date\": \"2025-03-31\",\n  \"start_time\": \"00:00:00\",\n  \"end_time\": \"23:59:59\",\n  \"ip_action\": \"allow\",\n  \"ip_list\": \"1.1.1.1,2.2.2.2\",\n  \"device_targeting_json\": { \"device\": [\"mobile\"] },\n  \"os_targeting_json\": { \"os\": [\"ios\",\"android\"] },\n  \"browser_targeting_json\": { \"browser\": [\"chrome\"] },\n  \"isp_targeting_json\": { \"isp\": [\"verizon\"] },\n  \"carrier_targeting_json\": { \"carrier\": [\"att\"] },\n  \"city_targeting_json\": { \"city\": [\"NYC\"] },\n  \"daily_cap\": 1000,\n  \"monthly_cap\": 20000,\n  \"total_cap\": 50000,\n  \"conversion_cap\": 10000,\n  \"budget_cap\": 100000.00,\n  \"cap_action\": \"pause\",\n  \"fallback_enabled\": true,\n  \"fallback_url\": \"https://example.com/fallback\",\n  \"fallback_offer_id\": 2,\n  \"advertiser_postback_url\": \"https://adv.com/pb\",\n  \"advertiser_postback_method\": \"GET\",\n  \"advertiser_postback_macros_json\": { \"cid\": \"{click_id}\" },\n  \"system_postback_url\": \"https://system.com/pb\",\n  \"system_postback_method\": \"POST\",\n  \"system_postback_macros_json\": { \"status\": \"{status}\" }\n}"
+              "raw": "{\n  \"advertiser_id\": 1,\n  \"name\": \"Spring Promo\",\n  \"offer_currency\": \"USD\",\n  \"country\": \"US\",\n  \"advertiser_model\": \"CPL\",\n  \"advertiser_amount\": 25.00,\n  \"affiliate_model\": \"CPL\",\n  \"affiliate_amount\": 15.00,\n  \"offer_url\": \"https://example.com/offer\",\n  \"description\": \"50% off trial\",\n  \"category\": \"Shopping\",\n  \"status\": \"draft\",\n  \"preview_url\": \"https://example.com/preview\",\n  \"start_date\": \"2025-01-10\",\n  \"end_date\": \"2025-03-31\",\n  \"capping_type\": \"daily\",\n  \"daily_cap\": 1000,\n  \"monthly_cap\": 20000,\n  \"total_cap\": 50000\n}"
             },
             "url": { "raw": "{{base_url}}/api/admin/offers", "host": ["{{base_url}}"], "path": ["api","admin","offers"] }
           }
         },
         {
-          "name": "Update Offer (any fields optional)",
+          "name": "Update Offer",
           "request": {
             "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{auth_token}}", "type": "string" }] },
             "method": "PATCH",
             "header": [{ "key": "Content-Type", "value": "application/json" }],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"name\": \"Spring Promo v2\",\n  \"status\": \"live\",\n  \"affiliate_amount\": 18.00,\n  \"macros_json\": { \"click_id\": \"{click_id}\", \"sub_id\": \"{sub_id}\" },\n  \"fallback_enabled\": false\n}"
+              "raw": "{\n  \"name\": \"Spring Promo v2\",\n  \"status\": \"live\",\n  \"affiliate_amount\": 18.00\n}"
             },
             "url": { "raw": "{{base_url}}/api/admin/offers/:id", "host": ["{{base_url}}"], "path": ["api","admin","offers",":id"], "variable": [{ "key": "id", "value": "1" }] }
           }
@@ -251,32 +249,40 @@
             "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{auth_token}}", "type": "string" }] },
             "method": "PATCH",
             "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "body": { "mode": "raw", "raw": "{\n  \"status\": \"paused\"\n}" },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"paused\"\n}"
+            },
             "url": { "raw": "{{base_url}}/api/admin/offers/:id/status", "host": ["{{base_url}}"], "path": ["api","admin","offers",":id","status"], "variable": [{ "key": "id", "value": "1" }] }
           }
         },
         {
-          "name": "Get Offer",
+          "name": "Get Offer (Basic)",
           "request": {
-            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{auth_token}}", "type": "string" }] },
             "method": "GET",
             "url": { "raw": "{{base_url}}/api/admin/offers/:id", "host": ["{{base_url}}"], "path": ["api","admin","offers",":id"], "variable": [{ "key": "id", "value": "1" }] }
           }
         },
         {
+          "name": "Get Offer with Details",
+          "request": {
+            "auth": { "type": "basic", "basic": [{ "key": "username", "value": "admin@bng.com", "type": "string" }, { "key": "password", "value": "admin123", "type": "string" }] },
+            "method": "GET",
+            "url": { "raw": "{{base_url}}/api/admin/offers/single/:id", "host": ["{{base_url}}"], "path": ["api","admin","offers","single",":id"], "variable": [{ "key": "id", "value": "1" }] }
+          }
+        },
+        {
           "name": "List Offers",
           "request": {
-            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{auth_token}}", "type": "string" }] },
             "method": "GET",
             "url": {
-              "raw": "{{base_url}}/api/admin/offers?status=live&advertiser_id=1&category=Shopping&search=promo&page=1&limit=20",
+              "raw": "{{base_url}}/api/admin/offers?type=live&category=Shopping&advertiser_id=1&page=1&limit=20",
               "host": ["{{base_url}}"],
               "path": ["api","admin","offers"],
               "query": [
-                { "key": "status", "value": "live" },
-                { "key": "advertiser_id", "value": "1" },
+                { "key": "type", "value": "live", "description": "Filter: all, live, approved" },
                 { "key": "category", "value": "Shopping" },
-                { "key": "search", "value": "promo" },
+                { "key": "advertiser_id", "value": "1" },
                 { "key": "page", "value": "1" },
                 { "key": "limit", "value": "20" }
               ]
@@ -297,35 +303,47 @@
       "name": "Admin - Assignments",
       "item": [
         {
-          "name": "Create Assignment",
+          "name": "Create Assignment (Multi-Publisher)",
           "request": {
-            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{auth_token}}", "type": "string" }] },
+            "auth": { "type": "basic", "basic": [{ "key": "username", "value": "admin@bng.com", "type": "string" }, { "key": "password", "value": "admin123", "type": "string" }] },
             "method": "POST",
             "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "body": { "mode": "raw", "raw": "{\n  \"publisher_id\": 1,\n  \"offer_id\": 1,\n  \"payout_override\": 9.00,\n  \"cap_override\": 500,\n  \"notes\": \"Preferred affiliate\"\n}" },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"offer_id\": 10,\n  \"publishers\": [\n    {\n      \"publisher_id\": 7,\n      \"payout_override\": 1.50,\n      \"conversion_approval_percentage\": 50,\n      \"capping_budget\": {\n        \"duration\": \"day\",\n        \"amount\": 100\n      },\n      \"capping_conversions\": {\n        \"duration\": \"day\",\n        \"amount\": 50\n      },\n      \"callback_url\": \"https://affiliate.com/postback?click_id={click_id}&payout={payout}\",\n      \"offer_url\": \"https://pulpy.com/click?offer_id=10&publisher_id=7&tid={TID}\",\n      \"notes\": \"Top publisher\",\n      \"status\": \"active\"\n    },\n    {\n      \"publisher_id\": 9,\n      \"payout_override\": 2.00,\n      \"conversion_approval_percentage\": 70,\n      \"capping_budget\": {\n        \"duration\": \"month\",\n        \"amount\": 500\n      },\n      \"capping_conversions\": {\n        \"duration\": \"month\",\n        \"amount\": 200\n      },\n      \"callback_url\": \"https://aff9.com/cb?cid={click_id}\",\n      \"offer_url\": \"https://pulpy.com/click?offer_id=10&publisher_id=9&tid={TID}\",\n      \"notes\": \"\",\n      \"status\": \"active\"\n    }\n  ]\n}"
+            },
             "url": { "raw": "{{base_url}}/api/admin/assignments", "host": ["{{base_url}}"], "path": ["api","admin","assignments"] }
           }
         },
         {
           "name": "List Assignments",
           "request": {
-            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{auth_token}}", "type": "string" }] },
+            "auth": { "type": "basic", "basic": [{ "key": "username", "value": "admin@bng.com", "type": "string" }, { "key": "password", "value": "admin123", "type": "string" }] },
             "method": "GET",
-            "url": { "raw": "{{base_url}}/api/admin/assignments", "host": ["{{base_url}}"], "path": ["api","admin","assignments"] }
+            "url": {
+              "raw": "{{base_url}}/api/admin/assignments?publisher_id=1&offer_id=10&status=active",
+              "host": ["{{base_url}}"],
+              "path": ["api","admin","assignments"],
+              "query": [
+                { "key": "publisher_id", "value": "1", "description": "Filter by publisher ID" },
+                { "key": "offer_id", "value": "10", "description": "Filter by offer ID" },
+                { "key": "status", "value": "active", "description": "Filter by status: active, inactive, suspended" }
+              ]
+            }
           }
         },
         {
           "name": "Get Assignment",
           "request": {
-            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{auth_token}}", "type": "string" }] },
+            "auth": { "type": "basic", "basic": [{ "key": "username", "value": "admin@bng.com", "type": "string" }, { "key": "password", "value": "admin123", "type": "string" }] },
             "method": "GET",
             "url": { "raw": "{{base_url}}/api/admin/assignments/:id", "host": ["{{base_url}}"], "path": ["api","admin","assignments",":id"], "variable": [{ "key": "id", "value": "1" }] }
           }
         },
         {
-          "name": "Generate Tracking URL",
+          "name": "Get Tracking URL",
           "request": {
-            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{auth_token}}", "type": "string" }] },
+            "auth": { "type": "basic", "basic": [{ "key": "username", "value": "admin@bng.com", "type": "string" }, { "key": "password", "value": "admin123", "type": "string" }] },
             "method": "GET",
             "url": { "raw": "{{base_url}}/api/admin/assignments/:id/tracking-url", "host": ["{{base_url}}"], "path": ["api","admin","assignments",":id","tracking-url"], "variable": [{ "key": "id", "value": "1" }] }
           }
@@ -333,7 +351,7 @@
         {
           "name": "Delete Assignment",
           "request": {
-            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{auth_token}}", "type": "string" }] },
+            "auth": { "type": "basic", "basic": [{ "key": "username", "value": "admin@bng.com", "type": "string" }, { "key": "password", "value": "admin123", "type": "string" }] },
             "method": "DELETE",
             "url": { "raw": "{{base_url}}/api/admin/assignments/:id", "host": ["{{base_url}}"], "path": ["api","admin","assignments",":id"], "variable": [{ "key": "id", "value": "1" }] }
           }
@@ -343,55 +361,85 @@
     {
       "name": "Admin - Test Conversion",
       "request": {
-        "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{auth_token}}", "type": "string" }] },
+        "auth": { "type": "basic", "basic": [{ "key": "username", "value": "admin@bng.com", "type": "string" }, { "key": "password", "value": "admin123", "type": "string" }] },
         "method": "POST",
         "header": [{ "key": "Content-Type", "value": "application/json" }],
-        "body": { "mode": "raw", "raw": "{\n  \"affiliate_url\": \"http://localhost:5000/click?offer_id=1&pub_id=1&tid=test123\"\n}" },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"affiliate_url\": \"http://localhost:3000/click?offer_id=1&pub_id=1&tid=test123\",\n  \"click_id\": \"optional-existing-click-uuid\"\n}"
+        },
         "url": { "raw": "{{base_url}}/api/admin/test-conversion", "host": ["{{base_url}}"], "path": ["api","admin","test-conversion"] }
       }
     },
     {
-      "name": "Reporting (Admin)",
+      "name": "Admin - Reports",
       "item": [
         {
-          "name": "Dashboard",
+          "name": "Dashboard Stats",
           "request": {
-            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{auth_token}}", "type": "string" }] },
+            "auth": { "type": "basic", "basic": [{ "key": "username", "value": "admin@bng.com", "type": "string" }, { "key": "password", "value": "admin123", "type": "string" }] },
             "method": "GET",
             "url": { "raw": "{{base_url}}/api/admin/reports/dashboard", "host": ["{{base_url}}"], "path": ["api","admin","reports","dashboard"] }
           }
         },
         {
-          "name": "Summary",
+          "name": "Summary Report",
           "request": {
-            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{auth_token}}", "type": "string" }] },
+            "auth": { "type": "basic", "basic": [{ "key": "username", "value": "admin@bng.com", "type": "string" }, { "key": "password", "value": "admin123", "type": "string" }] },
             "method": "GET",
             "url": {
-              "raw": "{{base_url}}/api/admin/reports/summary?date_from=2025-01-01&date_to=2025-01-31&offer_id=1",
+              "raw": "{{base_url}}/api/admin/reports/summary?date_from=2024-01-01&date_to=2024-01-31&offer_id=1&publisher_id=1&country=US",
               "host": ["{{base_url}}"],
               "path": ["api","admin","reports","summary"],
               "query": [
-                { "key": "date_from", "value": "2025-01-01" },
-                { "key": "date_to", "value": "2025-01-31" },
-                { "key": "offer_id", "value": "1" }
+                { "key": "date_from", "value": "2024-01-01", "description": "Start date (YYYY-MM-DD)" },
+                { "key": "date_to", "value": "2024-01-31", "description": "End date (YYYY-MM-DD)" },
+                { "key": "offer_id", "value": "1", "description": "Filter by offer ID" },
+                { "key": "publisher_id", "value": "1", "description": "Filter by publisher ID" },
+                { "key": "country", "value": "US", "description": "Filter by country" },
+                { "key": "tid", "value": "", "description": "Filter by tracking ID" },
+                { "key": "rcid", "value": "", "description": "Filter by revenue click ID" },
+                { "key": "device_brand", "value": "", "description": "Filter by device brand" },
+                { "key": "os", "value": "", "description": "Filter by OS" },
+                { "key": "browser", "value": "", "description": "Filter by browser" }
               ]
             }
           }
         },
         {
-          "name": "Detailed",
+          "name": "Detailed Report",
           "request": {
-            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{auth_token}}", "type": "string" }] },
+            "auth": { "type": "basic", "basic": [{ "key": "username", "value": "admin@bng.com", "type": "string" }, { "key": "password", "value": "admin123", "type": "string" }] },
             "method": "GET",
             "url": {
-              "raw": "{{base_url}}/api/admin/reports/detailed?date_from=2025-01-01&offer_id=1&page=1&limit=50",
+              "raw": "{{base_url}}/api/admin/reports/detailed?date_from=2024-01-01&offer_id=1&page=1&limit=50",
               "host": ["{{base_url}}"],
               "path": ["api","admin","reports","detailed"],
               "query": [
-                { "key": "date_from", "value": "2025-01-01" },
+                { "key": "date_from", "value": "2024-01-01" },
+                { "key": "date_to", "value": "", "description": "End date (YYYY-MM-DD)" },
                 { "key": "offer_id", "value": "1" },
+                { "key": "publisher_id", "value": "", "description": "Filter by publisher ID" },
                 { "key": "page", "value": "1" },
                 { "key": "limit", "value": "50" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Publisher Conversion Statistics",
+          "request": {
+            "auth": { "type": "basic", "basic": [{ "key": "username", "value": "admin@bng.com", "type": "string" }, { "key": "password", "value": "admin123", "type": "string" }] },
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/admin/reports/publisher-conversions?publisher_id=1&offer_id=10&date_from=2024-01-01&date_to=2024-01-31",
+              "host": ["{{base_url}}"],
+              "path": ["api","admin","reports","publisher-conversions"],
+              "query": [
+                { "key": "publisher_id", "value": "1", "description": "Filter by specific publisher ID" },
+                { "key": "offer_id", "value": "10", "description": "Filter by specific offer ID" },
+                { "key": "date_from", "value": "2024-01-01", "description": "Start date (YYYY-MM-DD)" },
+                { "key": "date_to", "value": "2024-01-31", "description": "End date (YYYY-MM-DD)" }
               ]
             }
           }
@@ -402,7 +450,7 @@
       "name": "Tracking (Public)",
       "item": [
         {
-          "name": "Track Click (required: offer_id, pub_id)",
+          "name": "Track Click",
           "request": {
             "method": "GET",
             "url": {
@@ -410,20 +458,20 @@
               "host": ["{{base_url}}"],
               "path": ["click"],
               "query": [
-                { "key": "offer_id", "value": "1" },
-                { "key": "pub_id", "value": "1" },
-                { "key": "tid", "value": "test123" },
-                { "key": "rcid", "value": "rcid123" },
-                { "key": "source_id", "value": "src1" },
-                { "key": "device_id", "value": "dev1" },
-                { "key": "google_id", "value": "g1" },
-                { "key": "android_id", "value": "a1" }
+                { "key": "offer_id", "value": "1", "description": "Required: Offer ID" },
+                { "key": "pub_id", "value": "1", "description": "Required: Publisher ID" },
+                { "key": "tid", "value": "test123", "description": "Optional: Tracking ID" },
+                { "key": "rcid", "value": "rcid123", "description": "Optional: Revenue Click ID" },
+                { "key": "source_id", "value": "src1", "description": "Optional: Source identifier" },
+                { "key": "device_id", "value": "dev1", "description": "Optional: Device identifier" },
+                { "key": "google_id", "value": "g1", "description": "Optional: Google ID" },
+                { "key": "android_id", "value": "a1", "description": "Optional: Android ID" }
               ]
             }
           }
         },
         {
-          "name": "Track Impression (required: offer_id, pub_id)",
+          "name": "Track Impression",
           "request": {
             "method": "GET",
             "url": {
@@ -431,8 +479,8 @@
               "host": ["{{base_url}}"],
               "path": ["imp"],
               "query": [
-                { "key": "offer_id", "value": "1" },
-                { "key": "pub_id", "value": "1" }
+                { "key": "offer_id", "value": "1", "description": "Required: Offer ID" },
+                { "key": "pub_id", "value": "1", "description": "Required: Publisher ID" }
               ]
             }
           }
@@ -451,10 +499,10 @@
               "host": ["{{base_url}}"],
               "path": ["postback"],
               "query": [
-                { "key": "click_id", "value": "<click_uuid>" },
-                { "key": "rcid", "value": "rcid123" },
-                { "key": "amount", "value": "10.00" },
-                { "key": "status", "value": "approved" }
+                { "key": "click_id", "value": "<click_uuid>", "description": "Click UUID (required if rcid not provided)" },
+                { "key": "rcid", "value": "rcid123", "description": "Revenue Click ID (required if click_id not provided)" },
+                { "key": "amount", "value": "10.00", "description": "Optional: Conversion amount" },
+                { "key": "status", "value": "approved", "description": "Optional: Conversion status (default: approved)" }
               ]
             }
           }
@@ -474,7 +522,7 @@
       ]
     },
     {
-      "name": "Health",
+      "name": "Health Check",
       "request": {
         "method": "GET",
         "url": { "raw": "{{base_url}}/health", "host": ["{{base_url}}"], "path": ["health"] }

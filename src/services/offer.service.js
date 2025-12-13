@@ -214,6 +214,189 @@ class OfferService {
     return Array.isArray(rows) ? rows[0] : rows;
   }
 
+  async getOfferByIdWithDetails(id) {
+    try {
+      // Get offer details
+      const offer = await this.getOfferById(id);
+      if (!offer) {
+        return null;
+      }
+
+      // Parse JSON fields
+      const parseJsonFields = (offer) => {
+        jsonFields.forEach((field) => {
+          if (offer[field]) {
+            try {
+              offer[field] = typeof offer[field] === 'string' ? JSON.parse(offer[field]) : offer[field];
+            } catch (e) {
+              offer[field] = null;
+            }
+          } else {
+            offer[field] = null;
+          }
+        });
+        return offer;
+      };
+      const parsedOffer = parseJsonFields({ ...offer });
+
+      // Get advertiser details if advertiser_id exists
+      let advertiser = null;
+      if (parsedOffer.advertiser_id) {
+        const [advertiserRows] = await pool.query(
+          'SELECT * FROM advertisers WHERE id = ?',
+          [parsedOffer.advertiser_id]
+        );
+        advertiser = Array.isArray(advertiserRows) ? advertiserRows[0] : advertiserRows;
+      }
+
+      // Get assigned publishers (assignments)
+      const [assignmentsRows] = await pool.query(
+        `SELECT po.*, 
+                p.id as publisher_id,
+                p.email as publisher_email,
+                p.first_name as publisher_first_name,
+                p.company_name as publisher_company,
+                p.country as publisher_country,
+                p.status as publisher_status
+         FROM publisher_offers po
+         JOIN publishers p ON po.publisher_id = p.id
+         WHERE po.offer_id = ?
+         ORDER BY po.assigned_at DESC`,
+        [id]
+      );
+      const assignments = Array.isArray(assignmentsRows) ? assignmentsRows : [];
+
+      // Format assignments
+      const formattedAssignments = assignments.map(assignment => ({
+        id: assignment.id,
+        publisher_id: assignment.publisher_id,
+        publisher_email: assignment.publisher_email,
+        publisher_first_name: assignment.publisher_first_name,
+        publisher_company: assignment.publisher_company,
+        publisher_country: assignment.publisher_country,
+        publisher_status: assignment.publisher_status,
+        payout_override: assignment.payout_override,
+        cap_override: assignment.cap_override,
+        conversion_approval_percentage: assignment.conversion_approval_percentage,
+        capping_budget: assignment.capping_budget_duration ? {
+          duration: assignment.capping_budget_duration,
+          amount: assignment.capping_budget_amount,
+        } : null,
+        capping_conversions: assignment.capping_conversions_duration ? {
+          duration: assignment.capping_conversions_duration,
+          amount: assignment.capping_conversions_amount,
+        } : null,
+        callback_url: assignment.callback_url,
+        offer_url: assignment.offer_url,
+        notes: assignment.notes,
+        status: assignment.status,
+        assigned_at: assignment.assigned_at,
+      }));
+
+      // Get statistics
+      const [statsRows] = await pool.query(
+        `SELECT 
+          COUNT(DISTINCT c.id) as total_clicks,
+          COUNT(DISTINCT c.publisher_id) as unique_publishers,
+          COUNT(DISTINCT i.id) as total_impressions,
+          COUNT(DISTINCT conv.id) as total_conversions,
+          COUNT(DISTINCT CASE WHEN conv.status = 'approved' THEN conv.id END) as approved_conversions,
+          COUNT(DISTINCT CASE WHEN conv.status = 'pending' THEN conv.id END) as pending_conversions,
+          COUNT(DISTINCT CASE WHEN conv.status = 'rejected' THEN conv.id END) as rejected_conversions,
+          COALESCE(SUM(conv.amount), 0) as total_revenue,
+          COALESCE(SUM(conv.payout), 0) as total_payout,
+          COALESCE(SUM(conv.amount - conv.payout), 0) as total_profit
+        FROM offers o
+        LEFT JOIN clicks c ON c.offer_id = o.id
+        LEFT JOIN impressions i ON i.offer_id = o.id
+        LEFT JOIN conversions conv ON conv.offer_id = o.id
+        WHERE o.id = ?`,
+        [id]
+      );
+      const stats = Array.isArray(statsRows) ? statsRows[0] : statsRows;
+
+      // Calculate conversion rate
+      const conversionRate = stats.total_clicks > 0
+        ? ((stats.total_conversions || 0) / stats.total_clicks) * 100
+        : 0;
+
+      // Get recent clicks (last 50)
+      const [recentClicksRows] = await pool.query(
+        `SELECT c.*, 
+                p.email as publisher_email,
+                p.company_name as publisher_company
+         FROM clicks c
+         LEFT JOIN publishers p ON c.publisher_id = p.id
+         WHERE c.offer_id = ?
+         ORDER BY c.created_at DESC
+         LIMIT 50`,
+        [id]
+      );
+      const recentClicks = Array.isArray(recentClicksRows) ? recentClicksRows : [];
+
+      // Get recent conversions (last 50)
+      const [recentConversionsRows] = await pool.query(
+        `SELECT conv.*,
+                p.email as publisher_email,
+                p.company_name as publisher_company,
+                c.click_uuid
+         FROM conversions conv
+         LEFT JOIN publishers p ON conv.publisher_id = p.id
+         LEFT JOIN clicks c ON conv.click_uuid = c.click_uuid
+         WHERE conv.offer_id = ?
+         ORDER BY conv.created_at DESC
+         LIMIT 50`,
+        [id]
+      );
+      const recentConversions = Array.isArray(recentConversionsRows) ? recentConversionsRows : [];
+
+      // Get clicks by publisher
+      const [clicksByPublisherRows] = await pool.query(
+        `SELECT 
+          c.publisher_id,
+          p.email as publisher_email,
+          p.company_name as publisher_company,
+          COUNT(DISTINCT c.id) as click_count,
+          COUNT(DISTINCT conv.id) as conversion_count,
+          COALESCE(SUM(conv.amount), 0) as revenue,
+          COALESCE(SUM(conv.payout), 0) as payout
+        FROM clicks c
+        LEFT JOIN publishers p ON c.publisher_id = p.id
+        LEFT JOIN conversions conv ON conv.click_uuid = c.click_uuid
+        WHERE c.offer_id = ?
+        GROUP BY c.publisher_id, p.email, p.company_name
+        ORDER BY click_count DESC`,
+        [id]
+      );
+      const clicksByPublisher = Array.isArray(clicksByPublisherRows) ? clicksByPublisherRows : [];
+
+      return {
+        ...parsedOffer,
+        advertiser,
+        assignments: formattedAssignments,
+        statistics: {
+          total_clicks: parseInt(stats.total_clicks || 0),
+          unique_publishers: parseInt(stats.unique_publishers || 0),
+          total_impressions: parseInt(stats.total_impressions || 0),
+          total_conversions: parseInt(stats.total_conversions || 0),
+          approved_conversions: parseInt(stats.approved_conversions || 0),
+          pending_conversions: parseInt(stats.pending_conversions || 0),
+          rejected_conversions: parseInt(stats.rejected_conversions || 0),
+          total_revenue: parseFloat(stats.total_revenue || 0),
+          total_payout: parseFloat(stats.total_payout || 0),
+          total_profit: parseFloat(stats.total_profit || 0),
+          conversion_rate: parseFloat(conversionRate.toFixed(2)),
+        },
+        recent_clicks: recentClicks,
+        recent_conversions: recentConversions,
+        clicks_by_publisher: clicksByPublisher,
+      };
+    } catch (error) {
+      logger.error('OfferService.getOfferByIdWithDetails error:', error);
+      throw error;
+    }
+  }
+
   async listOffers(filters = {}) {
     const conditions = [];
     const params = [];

@@ -54,7 +54,7 @@ class OfferController {
 
   async getOffer(request, reply) {
     try {
-      const offer = await offerService.getOfferById(request.params.id);
+      const offer = await offerService.getOfferByIdWithDetails(request.params.id);
       if (!offer) {
         return reply.code(404).send(buildError('Offer not found', 404, 'Not Found'));
       }

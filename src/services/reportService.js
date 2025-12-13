@@ -222,6 +222,133 @@ export class ReportService {
     
     return { clause, params };
   }
+
+  /**
+   * Get publisher conversion statistics grouped by offer
+   * @param {Object} filters - Filter options (publisher_id, offer_id, date_from, date_to)
+   * @returns {Promise<Object>} Publisher conversion statistics
+   */
+  async getPublisherConversionStats(filters = {}) {
+    try {
+      let query = `
+        SELECT 
+          p.id as publisher_id,
+          p.email as publisher_email,
+          p.company_name as publisher_company,
+          p.country as publisher_country,
+          o.id as offer_id,
+          o.name as offer_name,
+          o.category as offer_category,
+          COUNT(DISTINCT c.id) as total_clicks,
+          COUNT(DISTINCT conv.id) as total_conversions,
+          COUNT(DISTINCT CASE WHEN conv.status = 'approved' THEN conv.id END) as approved_conversions,
+          COUNT(DISTINCT CASE WHEN conv.status = 'pending' THEN conv.id END) as pending_conversions,
+          COUNT(DISTINCT CASE WHEN conv.status = 'rejected' THEN conv.id END) as rejected_conversions,
+          COUNT(DISTINCT CASE WHEN conv.status = 'rejected_cap' THEN conv.id END) as rejected_cap_conversions,
+          COALESCE(SUM(conv.amount), 0) as total_revenue,
+          COALESCE(SUM(CASE WHEN conv.status = 'approved' THEN conv.amount ELSE 0 END), 0) as approved_revenue,
+          COALESCE(SUM(conv.payout), 0) as total_payout,
+          COALESCE(SUM(CASE WHEN conv.status = 'approved' THEN conv.payout ELSE 0 END), 0) as approved_payout,
+          COALESCE(SUM(conv.amount - conv.payout), 0) as total_profit,
+          COALESCE(SUM(CASE WHEN conv.status = 'approved' THEN conv.amount - conv.payout ELSE 0 END), 0) as approved_profit
+        FROM publishers p
+        INNER JOIN publisher_offers po ON p.id = po.publisher_id
+        INNER JOIN offers o ON po.offer_id = o.id
+        LEFT JOIN clicks c ON c.publisher_id = p.id AND c.offer_id = o.id
+        LEFT JOIN conversions conv ON conv.publisher_id = p.id AND conv.offer_id = o.id
+        WHERE 1=1
+      `;
+
+      const params = [];
+
+      if (filters.publisher_id) {
+        query += ' AND p.id = ?';
+        params.push(filters.publisher_id);
+      }
+
+      if (filters.offer_id) {
+        query += ' AND o.id = ?';
+        params.push(filters.offer_id);
+      }
+
+      if (filters.date_from) {
+        query += ' AND conv.created_at >= ?';
+        params.push(filters.date_from);
+      }
+
+      if (filters.date_to) {
+        query += ' AND conv.created_at <= ?';
+        params.push(filters.date_to);
+      }
+
+      query += `
+        GROUP BY p.id, p.email, p.company_name, p.country, o.id, o.name, o.category
+        ORDER BY total_conversions DESC, approved_conversions DESC
+      `;
+
+      const [rows] = await pool.query(query, params);
+
+      // Calculate conversion rates
+      const stats = rows.map(row => {
+        const conversionRate = row.total_clicks > 0
+          ? (row.total_conversions / row.total_clicks) * 100
+          : 0;
+        const approvalRate = row.total_conversions > 0
+          ? (row.approved_conversions / row.total_conversions) * 100
+          : 0;
+
+        return {
+          publisher: {
+            id: row.publisher_id,
+            email: row.publisher_email,
+            company_name: row.publisher_company,
+            country: row.publisher_country,
+          },
+          offer: {
+            id: row.offer_id,
+            name: row.offer_name,
+            category: row.offer_category,
+          },
+          clicks: {
+            total: parseInt(row.total_clicks || 0),
+          },
+          conversions: {
+            total: parseInt(row.total_conversions || 0),
+            approved: parseInt(row.approved_conversions || 0),
+            pending: parseInt(row.pending_conversions || 0),
+            rejected: parseInt(row.rejected_conversions || 0),
+            rejected_cap: parseInt(row.rejected_cap_conversions || 0),
+            conversion_rate: parseFloat(conversionRate.toFixed(2)),
+            approval_rate: parseFloat(approvalRate.toFixed(2)),
+          },
+          revenue: {
+            total: parseFloat(row.total_revenue || 0),
+            approved: parseFloat(row.approved_revenue || 0),
+          },
+          payout: {
+            total: parseFloat(row.total_payout || 0),
+            approved: parseFloat(row.approved_payout || 0),
+          },
+          profit: {
+            total: parseFloat(row.total_profit || 0),
+            approved: parseFloat(row.approved_profit || 0),
+          },
+        };
+      });
+
+      return {
+        stats,
+        summary: {
+          total_publishers: new Set(rows.map(r => r.publisher_id)).size,
+          total_offers: new Set(rows.map(r => r.offer_id)).size,
+          total_combinations: rows.length,
+        },
+      };
+    } catch (error) {
+      logger.error('ReportService.getPublisherConversionStats error:', error);
+      throw error;
+    }
+  }
 }
 
 export default new ReportService();

@@ -53,12 +53,28 @@ export class TrackingService {
         };
       }
 
-      // Step 2: total cap
+      // Step 2: Check assignment-level capping (budget)
+      if (await this.isAssignmentBudgetCapHit(assignment, offerId, publisherId)) {
+        return {
+          redirect: fallbackRedirect,
+          clickId: null,
+        };
+      }
+
+      // Step 3: Check assignment-level capping (conversions)
+      if (await this.isAssignmentConversionCapHit(assignment, offerId, publisherId)) {
+        return {
+          redirect: fallbackRedirect,
+          clickId: null,
+        };
+      }
+
+      // Step 4: total cap (offer-level)
       if (await this.isTotalCapHit(offer)) {
         return await this.applyCapAction(offer, fallbackRedirect);
       }
 
-      // Step 3: capping_type specific
+      // Step 5: capping_type specific (offer-level)
       if (await this.isCappingTypeHit(offer)) {
         return await this.applyCapAction(offer, fallbackRedirect);
       }
@@ -119,11 +135,19 @@ export class TrackingService {
       const [clickRows] = await pool.query('SELECT id, click_uuid FROM clicks WHERE id = ?', [clickId]);
       const click = Array.isArray(clickRows) ? clickRows[0] : clickRows;
       
-      // Determine redirect URL
-      let redirectUrl = offer.offer_url;
+      // Determine redirect URL - use assignment.offer_url if available, otherwise offer.offer_url
+      let redirectUrl = assignment.offer_url || offer.offer_url;
       
       if (offer.status === 'deactivate') {
-        redirectUrl = offer.fallback_url || offer.offer_url;
+        redirectUrl = offer.fallback_url || redirectUrl;
+      }
+      
+      // Replace macros in assignment URL
+      if (assignment.offer_url) {
+        redirectUrl = redirectUrl
+          .replace(/{TID}/g, query.tid || '')
+          .replace(/{RCID}/g, query.rcid || '')
+          .replace(/{CLICK_ID}/g, click.click_uuid);
       }
       
       // Append click parameters
@@ -138,7 +162,7 @@ export class TrackingService {
       });
       
       // Update daily stats
-      await this.updateDailyStats(offerId, 'click');
+      await this.updateDailyStats(offerId, publisherId, 'click');
       
       return {
         redirect: redirectUrl,
@@ -225,6 +249,21 @@ export class TrackingService {
       if (!publisher) {
         return { success: false, error: 'Publisher not found' };
       }
+
+      if (publisher.status !== 'active') {
+        return { success: false, error: 'Publisher is not active' };
+      }
+
+      // Check assignment exists
+      const [assignmentRows] = await pool.query(
+        'SELECT * FROM publisher_offers WHERE publisher_id = ? AND offer_id = ? AND status = ?',
+        [publisherId, offerId, 'active']
+      );
+      
+      const assignment = Array.isArray(assignmentRows) ? assignmentRows[0] : assignmentRows;
+      if (!assignment) {
+        return { success: false, error: 'Assignment not found or inactive' };
+      }
       
       // Extract info
       const ip = extractIP(request);
@@ -241,7 +280,7 @@ export class TrackingService {
       );
       
       // Update daily stats
-      await this.updateDailyStats(offerId, 'impression');
+      await this.updateDailyStats(offerId, publisherId, 'impression');
       
       return { success: true, impUuid };
     } catch (error) {
@@ -250,13 +289,89 @@ export class TrackingService {
     }
   }
   
-  async updateDailyStats(offerId, type) {
+  async isAssignmentBudgetCapHit(assignment, offerId, publisherId) {
+    if (!assignment.capping_budget_duration || !assignment.capping_budget_amount) {
+      return false;
+    }
+
+    const duration = assignment.capping_budget_duration;
+    const capAmount = parseFloat(assignment.capping_budget_amount);
+    if (capAmount <= 0) return false;
+
+    let dateCondition = '';
+    if (duration === 'hour') {
+      dateCondition = 'HOUR(created_at) = HOUR(NOW()) AND DATE(created_at) = CURDATE()';
+    } else if (duration === 'day') {
+      dateCondition = 'DATE(created_at) = CURDATE()';
+    } else if (duration === 'week') {
+      dateCondition = 'YEARWEEK(created_at, 1) = YEARWEEK(NOW(), 1)';
+    } else if (duration === 'month') {
+      dateCondition = 'YEAR(created_at) = YEAR(NOW()) AND MONTH(created_at) = MONTH(NOW())';
+    } else {
+      return false;
+    }
+
+    const [rows] = await pool.query(
+      `SELECT COALESCE(SUM(amount), 0) as total_revenue
+       FROM conversions
+       WHERE offer_id = ? AND publisher_id = ? AND ${dateCondition}`,
+      [offerId, publisherId]
+    );
+    
+    const totalRevenue = parseFloat((Array.isArray(rows) ? rows[0] : rows).total_revenue || 0);
+    return totalRevenue >= capAmount;
+  }
+
+  async isAssignmentConversionCapHit(assignment, offerId, publisherId) {
+    if (!assignment.capping_conversions_duration || !assignment.capping_conversions_amount) {
+      return false;
+    }
+
+    const duration = assignment.capping_conversions_duration;
+    const capCount = parseInt(assignment.capping_conversions_amount);
+    if (capCount <= 0) return false;
+
+    let dateCondition = '';
+    if (duration === 'hour') {
+      dateCondition = 'HOUR(created_at) = HOUR(NOW()) AND DATE(created_at) = CURDATE()';
+    } else if (duration === 'day') {
+      dateCondition = 'DATE(created_at) = CURDATE()';
+    } else if (duration === 'week') {
+      dateCondition = 'YEARWEEK(created_at, 1) = YEARWEEK(NOW(), 1)';
+    } else if (duration === 'month') {
+      dateCondition = 'YEAR(created_at) = YEAR(NOW()) AND MONTH(created_at) = MONTH(NOW())';
+    } else {
+      return false;
+    }
+
+    const [rows] = await pool.query(
+      `SELECT COUNT(*) as conversion_count
+       FROM conversions
+       WHERE offer_id = ? AND publisher_id = ? AND ${dateCondition}`,
+      [offerId, publisherId]
+    );
+    
+    const count = parseInt((Array.isArray(rows) ? rows[0] : rows).conversion_count || 0);
+    return count >= capCount;
+  }
+
+  async updateDailyStats(offerId, publisherId, type) {
     try {
       const today = new Date().toISOString().split('T')[0];
       
       // Upsert daily stats
       if (type === 'click') {
         // Unique click: first click from same IP + publisher + offer on same day
+        // Note: We need to get the latest click's IP for uniqueness check
+        const [latestClickRows] = await pool.query(
+          `SELECT ip FROM clicks 
+           WHERE offer_id = ? AND publisher_id = ? 
+           ORDER BY created_at DESC LIMIT 1`,
+          [offerId, publisherId]
+        );
+        const latestClick = Array.isArray(latestClickRows) ? latestClickRows[0] : latestClickRows;
+        const clickIp = latestClick?.ip || null;
+
         const [uniqRows] = await pool.query(
           `SELECT id FROM clicks 
              WHERE offer_id = ? 
@@ -264,7 +379,7 @@ export class TrackingService {
                AND ip = ? 
                AND DATE(created_at) = ? 
              LIMIT 1`,
-          [offerId, assignment?.publisher_id || null, request.ip || null, today]
+          [offerId, publisherId, clickIp, today]
         );
         const isUnique = !uniqRows || uniqRows.length === 0;
 
