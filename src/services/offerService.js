@@ -353,7 +353,7 @@ export class OfferService {
     const [rows] = await pool.query(`
       SELECT 
         COUNT(*) as total,
-        SUM(CASE WHEN status = 'active' THEN 1 ELSE 0 END) as active
+        SUM(CASE WHEN status = 'live' THEN 1 ELSE 0 END) as active
       FROM offers
       WHERE status != 'remove'
     `);
