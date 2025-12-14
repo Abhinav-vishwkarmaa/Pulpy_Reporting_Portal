@@ -8,6 +8,8 @@ import { extractDomain, appendClickParams } from '../utils/urlGenerator.js';
 import offerService from './offerService.js';
 import publisherService from './publisherService.js';
 import assignmentService from './assignmentService.js';
+import fraudDetectionService from './fraudDetectionService.js';
+import offerTargetingService from './offerTargetingService.js';
 
 export class TrackingService {
   async trackClick(query, request) {
@@ -78,6 +80,24 @@ export class TrackingService {
       if (await this.isCappingTypeHit(offer)) {
         return await this.applyCapAction(offer, fallbackRedirect);
       }
+
+      // Step 5.5: Offer Targeting Rules Check (BEFORE fraud check)
+      const targetingResult = await offerTargetingService.evaluateTargeting(
+        offer,
+        publisherId,
+        request,
+        query
+      );
+
+      if (!targetingResult.passed) {
+        logger.info(`Click blocked by targeting: ${targetingResult.reason} (Failed rule: ${targetingResult.failedRule})`);
+        return {
+          redirect: fallbackRedirect,
+          clickId: null,
+          targetingBlocked: true,
+          targetingReason: targetingResult.reason,
+        };
+      }
       
       // Parse device info
       const userAgent = request.headers['user-agent'] || '';
@@ -92,8 +112,33 @@ export class TrackingService {
       // Extract domain from referrer
       const referrer = request.headers.referer || request.headers.referrer || null;
       const domain = extractDomain(referrer);
+
+      // Step 6: Fraud Detection Check (BEFORE recording click)
+      const deviceId = query.device_id || query.google_id || query.android_id || null;
+      const fraudCheck = await fraudDetectionService.checkFraud(
+        {
+          offer_id: offerId,
+          publisher_id: publisherId,
+          device_id: deviceId,
+          ip,
+          user_agent: userAgent,
+        },
+        'click',
+        request
+      );
+
+      // If fraud detected and should reject, redirect to fallback
+      if (fraudCheck.isFraud && fraudCheck.reasonCode) {
+        logger.warn(`Click rejected due to fraud: ${fraudCheck.reasonText} (Score: ${fraudCheck.score})`);
+        return {
+          redirect: fallbackRedirect,
+          clickId: null,
+          fraudRejected: true,
+          fraudReason: fraudCheck.reasonText,
+        };
+      }
       
-      // Insert click
+      // Insert click (with fraud data)
       const clickUuid = uuidv4();
       const [clickResult] = await pool.query(
         `INSERT INTO clicks (
@@ -101,9 +146,10 @@ export class TrackingService {
           ip, user_agent, referrer, country, domain,
           device_type, browser, os, os_version, device_brand, device_model,
           source_id, device_id, google_id, android_id, rcid, tid,
+          fraud_checked, fraud_score, is_fraud,
           timestamp, created_at
         ) VALUES (
-          ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW()
+          ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW()
         )`,
         [
           clickUuid,
@@ -127,6 +173,9 @@ export class TrackingService {
           query.android_id || null,
           query.rcid || null,
           query.tid || null,
+          1, // fraud_checked
+          fraudCheck.score || 0, // fraud_score
+          fraudCheck.isFraud ? 1 : 0, // is_fraud
         ]
       );
       

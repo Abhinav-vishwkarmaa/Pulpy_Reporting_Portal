@@ -18,6 +18,12 @@ import offerRoutes from './routes/offer.routes.js';
 import trackingRoutes from './routes/tracking.js';
 import postbackRoutes from './routes/postback.js';
 import reportRoutes from './routes/reports.js';
+import fraudRoutes from './routes/fraud.js';
+import publisherPaymentRoutes from './routes/publisherPayment.js';
+import advertiserBillingRoutes from './routes/advertiserBilling.js';
+import realtimeDashboardRoutes from './routes/realtimeDashboard.js';
+import adminLoggingRoutes from './routes/adminLogging.js';
+import postbackRetryRoutes from './routes/postbackRetry.js';
 
 const fastify = Fastify({
   logger: logger,
@@ -64,6 +70,12 @@ async function initializeServer() {
   await fastify.register(trackingRoutes);
   await fastify.register(postbackRoutes);
   await fastify.register(reportRoutes, { prefix: '/api/admin/reports' });
+  await fastify.register(fraudRoutes, { prefix: '/api/admin/fraud' });
+  await fastify.register(publisherPaymentRoutes, { prefix: '/api/admin/payments' });
+  await fastify.register(advertiserBillingRoutes, { prefix: '/api/admin/billing' });
+  await fastify.register(realtimeDashboardRoutes, { prefix: '/api/admin/dashboard/realtime' });
+  await fastify.register(adminLoggingRoutes, { prefix: '/api/admin/logs' });
+  await fastify.register(postbackRetryRoutes, { prefix: '/api/admin/postbacks' });
 
   // 404 Not Found Handler - Enhanced with better logging (must be after routes)
   fastify.setNotFoundHandler((request, reply) => {

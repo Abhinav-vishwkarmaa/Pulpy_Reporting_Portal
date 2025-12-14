@@ -4,6 +4,9 @@ import { v4 as uuidv4 } from 'uuid';
 import { extractIP } from '../utils/ipExtractor.js';
 import assignmentService from './assignmentService.js';
 import offerService from './offerService.js';
+import fraudDetectionService from './fraudDetectionService.js';
+import postbackRetryService from './postbackRetryService.js';
+import adminLoggingService from './adminLoggingService.js';
 import https from 'https';
 import http from 'http';
 
@@ -196,13 +199,71 @@ export class PostbackService {
         };
       }
 
-      // Insert conversion
+      // Fraud Detection Check for Conversion
+      const deviceId = click ? (click.device_id || click.google_id || click.android_id) : null;
+      const userAgent = click ? click.user_agent : (request.headers['user-agent'] || '');
+      const fraudCheck = await fraudDetectionService.checkFraud(
+        {
+          offer_id: offerId,
+          publisher_id: publisherId,
+          click_id: click ? click.id : null,
+          conversion_id: null,
+          device_id: deviceId,
+          ip,
+          user_agent: userAgent,
+        },
+        'conversion',
+        request
+      );
+
+      // If fraud detected and should reject, insert as rejected
+      if (fraudCheck.isFraud && fraudCheck.reasonCode && fraudCheck.reasonCode !== 'FLAGGED') {
+        const conversionUuid = uuidv4();
+        await pool.query(
+          `INSERT INTO conversions (
+            conversion_uuid, click_uuid, offer_id, publisher_id, publisher_offer_id,
+            rcid, status, amount, payout, ip, postback_payload,
+            fraud_checked, fraud_score, is_fraud, fraud_reason_code,
+            timestamp, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW(), NOW())`,
+          [
+            conversionUuid,
+            click ? click.click_uuid : null,
+            offerId,
+            publisherId,
+            publisherOfferId,
+            rcid || click?.rcid || uuidv4(),
+            'rejected',
+            0,
+            0,
+            ip,
+            JSON.stringify(postbackPayload),
+            1, // fraud_checked
+            fraudCheck.score || 0, // fraud_score
+            1, // is_fraud
+            fraudCheck.reasonCode, // fraud_reason_code
+          ]
+        );
+
+        return {
+          success: false,
+          message: `Conversion rejected due to fraud: ${fraudCheck.reasonText}`,
+          conversion: null,
+          duplicate: false,
+          fraudRejected: true,
+          fraudReason: fraudCheck.reasonText,
+        };
+      }
+
+      // Insert conversion (with fraud data)
       const conversionUuid = uuidv4();
       const [insertResult] = await pool.query(
         `INSERT INTO conversions (
           conversion_uuid, click_uuid, offer_id, publisher_id, publisher_offer_id,
-          rcid, status, amount, payout, ip, postback_payload, timestamp, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW(), NOW())`,
+          rcid, status, amount, payout, ip, postback_payload,
+          fraud_checked, fraud_score, is_fraud, fraud_reason_code,
+          timestamp, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW(), NOW())`,
         [
           conversionUuid,
           click ? click.click_uuid : null,
@@ -215,6 +276,10 @@ export class PostbackService {
           payout,
           ip,
           JSON.stringify(postbackPayload),
+          1, // fraud_checked
+          fraudCheck.score || 0, // fraud_score
+          fraudCheck.isFraud ? 1 : 0, // is_fraud
+          fraudCheck.reasonCode || null, // fraud_reason_code
         ]
       );
       
@@ -227,7 +292,63 @@ export class PostbackService {
       
       // Send postback to publisher's callback_url if assignment has one
       if (assignment?.callback_url && conversion) {
-        await this.sendPublisherPostback(assignment.callback_url, conversion, click);
+        const postbackStartTime = Date.now();
+        try {
+          await this.sendPublisherPostback(assignment.callback_url, conversion, click);
+          
+          // Log successful postback
+          await adminLoggingService.logPostback(
+            conversion.id,
+            publisherId,
+            assignment.callback_url,
+            'GET',
+            assignment.callback_url,
+            200,
+            'Success',
+            1,
+            true,
+            null,
+            Date.now() - postbackStartTime
+          );
+        } catch (error) {
+          // Add to retry queue on failure
+          const callbackUrl = assignment.callback_url
+            .replace(/{click_id}/g, conversion.click_uuid || click?.click_uuid || '')
+            .replace(/{CLICK_ID}/g, conversion.click_uuid || click?.click_uuid || '')
+            .replace(/{conversion_id}/g, conversion.conversion_uuid || '')
+            .replace(/{CONVERSION_ID}/g, conversion.conversion_uuid || '')
+            .replace(/{rcid}/g, conversion.rcid || '')
+            .replace(/{RCID}/g, conversion.rcid || '')
+            .replace(/{payout}/g, conversion.payout || '0')
+            .replace(/{PAYOUT}/g, conversion.payout || '0')
+            .replace(/{amount}/g, conversion.amount || '0')
+            .replace(/{AMOUNT}/g, conversion.amount || '0')
+            .replace(/{status}/g, conversion.status || 'pending')
+            .replace(/{STATUS}/g, conversion.status || 'pending');
+
+          await postbackRetryService.addToQueue(
+            conversion.id,
+            publisherId,
+            callbackUrl,
+            'GET',
+            callbackUrl
+          );
+
+          // Log failed postback
+          await adminLoggingService.logPostback(
+            conversion.id,
+            publisherId,
+            assignment.callback_url,
+            'GET',
+            callbackUrl,
+            null,
+            null,
+            1,
+            false,
+            error.message,
+            Date.now() - postbackStartTime
+          );
+        }
       }
       
       return {

@@ -1,9 +1,9 @@
 {
   "info": {
     "name": "BNG MIS Reporting Portal - Complete API Collection",
-    "description": "Complete API collection with all routes including Publishers, Offers, Advertisers, Assignments, Tracking, Postback, and Reporting. Supports both Basic Auth and JWT Bearer tokens.",
+    "description": "Complete API collection with all routes including Publishers, Offers, Advertisers, Assignments, Tracking, Postback, Reporting, Fraud Detection, Payments, Billing, Real-Time Dashboard, Logging, and Postback Retry. Supports both Basic Auth and JWT Bearer tokens.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
-    "version": "2.0.0"
+    "version": "3.0.0"
   },
   "auth": {
     "type": "bearer",
@@ -16,7 +16,7 @@
     ]
   },
   "variable": [
-    { "key": "base_url", "value": "http://localhost:3000", "type": "string" },
+    { "key": "base_url", "value": "http://localhost:5000", "type": "string" },
     { "key": "auth_token", "value": "", "type": "string" },
     { "key": "basic_auth", "value": "Basic YWRtaW5AYm5nLmNvbTphZG1pbjEyMw==", "type": "string", "description": "Base64 encoded admin@bng.com:admin123" }
   ],
@@ -517,6 +517,528 @@
               "raw": "{\n  \"click_id\": \"<click_uuid>\",\n  \"rcid\": \"rcid123\",\n  \"amount\": 10.00,\n  \"status\": \"approved\"\n}"
             },
             "url": { "raw": "{{base_url}}/postback", "host": ["{{base_url}}"], "path": ["postback"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin - Fraud Detection",
+      "item": [
+        {
+          "name": "Get Fraud Logs",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{auth_token}}", "type": "string" }] },
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/admin/fraud/logs?offer_id=1&publisher_id=1&event_type=click_rejected&reason_code=IP_FREQUENCY_EXCEEDED&start_date=2024-01-01&end_date=2024-01-31&limit=100&offset=0",
+              "host": ["{{base_url}}"],
+              "path": ["api","admin","fraud","logs"],
+              "query": [
+                { "key": "offer_id", "value": "1" },
+                { "key": "publisher_id", "value": "1" },
+                { "key": "event_type", "value": "click_rejected", "description": "click_rejected, conversion_rejected, conversion_flagged, suspicious_activity" },
+                { "key": "reason_code", "value": "IP_FREQUENCY_EXCEEDED" },
+                { "key": "start_date", "value": "2024-01-01" },
+                { "key": "end_date", "value": "2024-01-31" },
+                { "key": "limit", "value": "100" },
+                { "key": "offset", "value": "0" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Publisher Fraud Scores",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{auth_token}}", "type": "string" }] },
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/admin/fraud/publisher-scores?publisher_id=1&limit=100&offset=0",
+              "host": ["{{base_url}}"],
+              "path": ["api","admin","fraud","publisher-scores"],
+              "query": [
+                { "key": "publisher_id", "value": "1" },
+                { "key": "limit", "value": "100" },
+                { "key": "offset", "value": "0" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Calculate Publisher Fraud Score",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{auth_token}}", "type": "string" }] },
+            "method": "POST",
+            "url": { "raw": "{{base_url}}/api/admin/fraud/calculate-score/:publisherId", "host": ["{{base_url}}"], "path": ["api","admin","fraud","calculate-score",":publisherId"], "variable": [{ "key": "publisherId", "value": "1" }] }
+          }
+        },
+        {
+          "name": "Get Fraud Rules",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{auth_token}}", "type": "string" }] },
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/admin/fraud/rules?rule_type=global&offer_id=1&publisher_id=1",
+              "host": ["{{base_url}}"],
+              "path": ["api","admin","fraud","rules"],
+              "query": [
+                { "key": "rule_type", "value": "global", "description": "global, offer, publisher" },
+                { "key": "offer_id", "value": "1" },
+                { "key": "publisher_id", "value": "1" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Create Fraud Rule",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{auth_token}}", "type": "string" }] },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"rule_type\": \"global\",\n  \"rule_name\": \"Custom IP Frequency Check\",\n  \"rule_config\": {\n    \"max_clicks_per_hour\": 50,\n    \"max_clicks_per_day\": 500\n  },\n  \"action\": \"reject_click\",\n  \"is_active\": true\n}"
+            },
+            "url": { "raw": "{{base_url}}/api/admin/fraud/rules", "host": ["{{base_url}}"], "path": ["api","admin","fraud","rules"] }
+          }
+        },
+        {
+          "name": "Update Fraud Rule",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{auth_token}}", "type": "string" }] },
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"is_active\": false,\n  \"action\": \"log_only\"\n}"
+            },
+            "url": { "raw": "{{base_url}}/api/admin/fraud/rules/:id", "host": ["{{base_url}}"], "path": ["api","admin","fraud","rules",":id"], "variable": [{ "key": "id", "value": "1" }] }
+          }
+        },
+        {
+          "name": "Get IP Access Lists",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{auth_token}}", "type": "string" }] },
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/admin/fraud/ip-access-lists?list_type=blacklist&scope=global&offer_id=1&publisher_id=1&limit=100&offset=0",
+              "host": ["{{base_url}}"],
+              "path": ["api","admin","fraud","ip-access-lists"],
+              "query": [
+                { "key": "list_type", "value": "blacklist", "description": "blacklist, whitelist" },
+                { "key": "scope", "value": "global", "description": "global, offer, publisher" },
+                { "key": "offer_id", "value": "1" },
+                { "key": "publisher_id", "value": "1" },
+                { "key": "limit", "value": "100" },
+                { "key": "offset", "value": "0" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Add IP to Access List",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{auth_token}}", "type": "string" }] },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ip_address\": \"192.168.1.100\",\n  \"list_type\": \"blacklist\",\n  \"scope\": \"global\",\n  \"reason\": \"Suspicious activity detected\"\n}"
+            },
+            "url": { "raw": "{{base_url}}/api/admin/fraud/ip-access-lists", "host": ["{{base_url}}"], "path": ["api","admin","fraud","ip-access-lists"] }
+          }
+        },
+        {
+          "name": "Get User-Agent Blacklist",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{auth_token}}", "type": "string" }] },
+            "method": "GET",
+            "url": { "raw": "{{base_url}}/api/admin/fraud/user-agent-blacklist", "host": ["{{base_url}}"], "path": ["api","admin","fraud","user-agent-blacklist"] }
+          }
+        },
+        {
+          "name": "Add User-Agent to Blacklist",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{auth_token}}", "type": "string" }] },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"pattern\": \"%Bot%\",\n  \"match_type\": \"contains\",\n  \"reason\": \"Bot user agent\"\n}"
+            },
+            "url": { "raw": "{{base_url}}/api/admin/fraud/user-agent-blacklist", "host": ["{{base_url}}"], "path": ["api","admin","fraud","user-agent-blacklist"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin - Publisher Payments",
+      "item": [
+        {
+          "name": "Get Publisher Balance",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{auth_token}}", "type": "string" }] },
+            "method": "GET",
+            "url": { "raw": "{{base_url}}/api/admin/payments/publisher/:publisherId/balance", "host": ["{{base_url}}"], "path": ["api","admin","payments","publisher",":publisherId","balance"], "variable": [{ "key": "publisherId", "value": "1" }] }
+          }
+        },
+        {
+          "name": "Get Publisher Earnings",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{auth_token}}", "type": "string" }] },
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/admin/payments/publisher/:publisherId/earnings?status=pending&start_date=2024-01-01&end_date=2024-01-31&limit=50&offset=0",
+              "host": ["{{base_url}}"],
+              "path": ["api","admin","payments","publisher",":publisherId","earnings"],
+              "variable": [{ "key": "publisherId", "value": "1" }],
+              "query": [
+                { "key": "status", "value": "pending", "description": "pending, processing, paid, cancelled" },
+                { "key": "start_date", "value": "2024-01-01" },
+                { "key": "end_date", "value": "2024-01-31" },
+                { "key": "limit", "value": "50" },
+                { "key": "offset", "value": "0" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Calculate Earnings",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{auth_token}}", "type": "string" }] },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"publisher_id\": 1,\n  \"period_start\": \"2024-01-01\",\n  \"period_end\": \"2024-01-31\"\n}"
+            },
+            "url": { "raw": "{{base_url}}/api/admin/payments/calculate-earnings", "host": ["{{base_url}}"], "path": ["api","admin","payments","calculate-earnings"] }
+          }
+        },
+        {
+          "name": "Create Invoice",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{auth_token}}", "type": "string" }] },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"earnings_id\": 1\n}"
+            },
+            "url": { "raw": "{{base_url}}/api/admin/payments/invoices", "host": ["{{base_url}}"], "path": ["api","admin","payments","invoices"] }
+          }
+        },
+        {
+          "name": "Get Invoices",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{auth_token}}", "type": "string" }] },
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/admin/payments/invoices?publisher_id=1&status=pending&limit=50&offset=0",
+              "host": ["{{base_url}}"],
+              "path": ["api","admin","payments","invoices"],
+              "query": [
+                { "key": "publisher_id", "value": "1" },
+                { "key": "status", "value": "pending", "description": "draft, pending, approved, paid, cancelled" },
+                { "key": "limit", "value": "50" },
+                { "key": "offset", "value": "0" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Create Payment",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{auth_token}}", "type": "string" }] },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"invoice_id\": 1,\n  \"payment_method_id\": 1\n}"
+            },
+            "url": { "raw": "{{base_url}}/api/admin/payments", "host": ["{{base_url}}"], "path": ["api","admin","payments"] }
+          }
+        },
+        {
+          "name": "Complete Payment",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{auth_token}}", "type": "string" }] },
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"transaction_id\": \"TXN-123456\"\n}"
+            },
+            "url": { "raw": "{{base_url}}/api/admin/payments/:paymentId/complete", "host": ["{{base_url}}"], "path": ["api","admin","payments",":paymentId","complete"], "variable": [{ "key": "paymentId", "value": "1" }] }
+          }
+        },
+        {
+          "name": "Get Payment Methods",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{auth_token}}", "type": "string" }] },
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/admin/payments/payment-methods?publisher_id=1",
+              "host": ["{{base_url}}"],
+              "path": ["api","admin","payments","payment-methods"],
+              "query": [
+                { "key": "publisher_id", "value": "1" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Add Payment Method",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{auth_token}}", "type": "string" }] },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"publisher_id\": 1,\n  \"method_type\": \"paypal\",\n  \"paypal_email\": \"publisher@example.com\",\n  \"is_default\": true,\n  \"is_active\": true\n}"
+            },
+            "url": { "raw": "{{base_url}}/api/admin/payments/payment-methods", "host": ["{{base_url}}"], "path": ["api","admin","payments","payment-methods"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin - Advertiser Billing",
+      "item": [
+        {
+          "name": "Get Advertiser Balance",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{auth_token}}", "type": "string" }] },
+            "method": "GET",
+            "url": { "raw": "{{base_url}}/api/admin/billing/advertiser/:advertiserId/balance", "host": ["{{base_url}}"], "path": ["api","admin","billing","advertiser",":advertiserId","balance"], "variable": [{ "key": "advertiserId", "value": "1" }] }
+          }
+        },
+        {
+          "name": "Calculate Revenue",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{auth_token}}", "type": "string" }] },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"advertiser_id\": 1,\n  \"period_start\": \"2024-01-01\",\n  \"period_end\": \"2024-01-31\"\n}"
+            },
+            "url": { "raw": "{{base_url}}/api/admin/billing/calculate-revenue", "host": ["{{base_url}}"], "path": ["api","admin","billing","calculate-revenue"] }
+          }
+        },
+        {
+          "name": "Create Invoice",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{auth_token}}", "type": "string" }] },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"revenue_id\": 1\n}"
+            },
+            "url": { "raw": "{{base_url}}/api/admin/billing/invoices", "host": ["{{base_url}}"], "path": ["api","admin","billing","invoices"] }
+          }
+        },
+        {
+          "name": "Get Invoices",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{auth_token}}", "type": "string" }] },
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/admin/billing/invoices?advertiser_id=1&status=sent&limit=50&offset=0",
+              "host": ["{{base_url}}"],
+              "path": ["api","admin","billing","invoices"],
+              "query": [
+                { "key": "advertiser_id", "value": "1" },
+                { "key": "status", "value": "sent", "description": "draft, sent, paid, overdue, cancelled" },
+                { "key": "limit", "value": "50" },
+                { "key": "offset", "value": "0" }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin - Real-Time Dashboard",
+      "item": [
+        {
+          "name": "Get Real-Time Stats",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{auth_token}}", "type": "string" }] },
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/admin/dashboard/realtime/stats?window=5min&offer_id=1&publisher_id=1",
+              "host": ["{{base_url}}"],
+              "path": ["api","admin","dashboard","realtime","stats"],
+              "query": [
+                { "key": "window", "value": "5min", "description": "1min, 5min, 15min, 1hour, 1day" },
+                { "key": "offer_id", "value": "1" },
+                { "key": "publisher_id", "value": "1" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Top Offers",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{auth_token}}", "type": "string" }] },
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/admin/dashboard/realtime/top-offers?window=15min&limit=10",
+              "host": ["{{base_url}}"],
+              "path": ["api","admin","dashboard","realtime","top-offers"],
+              "query": [
+                { "key": "window", "value": "15min" },
+                { "key": "limit", "value": "10" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Top Publishers",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{auth_token}}", "type": "string" }] },
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/admin/dashboard/realtime/top-publishers?window=15min&limit=10",
+              "host": ["{{base_url}}"],
+              "path": ["api","admin","dashboard","realtime","top-publishers"],
+              "query": [
+                { "key": "window", "value": "15min" },
+                { "key": "limit", "value": "10" }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin - Logs & Audit",
+      "item": [
+        {
+          "name": "Get Change Logs",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{auth_token}}", "type": "string" }] },
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/admin/logs/change-logs?entity_type=offer&entity_id=1&action=update&start_date=2024-01-01&end_date=2024-01-31&limit=100&offset=0",
+              "host": ["{{base_url}}"],
+              "path": ["api","admin","logs","change-logs"],
+              "query": [
+                { "key": "entity_type", "value": "offer", "description": "offer, publisher, assignment, advertiser, payment, invoice" },
+                { "key": "entity_id", "value": "1" },
+                { "key": "action", "value": "update", "description": "create, update, delete, status_change, payout_change, url_change" },
+                { "key": "start_date", "value": "2024-01-01" },
+                { "key": "end_date", "value": "2024-01-31" },
+                { "key": "limit", "value": "100" },
+                { "key": "offset", "value": "0" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Tracking Logs",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{auth_token}}", "type": "string" }] },
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/admin/logs/tracking-logs?event_type=click&offer_id=1&publisher_id=1&start_date=2024-01-01&end_date=2024-01-31&limit=100&offset=0",
+              "host": ["{{base_url}}"],
+              "path": ["api","admin","logs","tracking-logs"],
+              "query": [
+                { "key": "event_type", "value": "click", "description": "click, impression, conversion" },
+                { "key": "offer_id", "value": "1" },
+                { "key": "publisher_id", "value": "1" },
+                { "key": "start_date", "value": "2024-01-01" },
+                { "key": "end_date", "value": "2024-01-31" },
+                { "key": "limit", "value": "100" },
+                { "key": "offset", "value": "0" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Postback Logs",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{auth_token}}", "type": "string" }] },
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/admin/logs/postback-logs?conversion_id=1&publisher_id=1&success=false&start_date=2024-01-01&limit=100&offset=0",
+              "host": ["{{base_url}}"],
+              "path": ["api","admin","logs","postback-logs"],
+              "query": [
+                { "key": "conversion_id", "value": "1" },
+                { "key": "publisher_id", "value": "1" },
+                { "key": "success", "value": "false", "description": "true, false" },
+                { "key": "start_date", "value": "2024-01-01" },
+                { "key": "limit", "value": "100" },
+                { "key": "offset", "value": "0" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Admin Action Logs",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{auth_token}}", "type": "string" }] },
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/admin/logs/admin-action-logs?admin_user_id=1&action_type=pause_publisher&target_type=publisher&start_date=2024-01-01&limit=100&offset=0",
+              "host": ["{{base_url}}"],
+              "path": ["api","admin","logs","admin-action-logs"],
+              "query": [
+                { "key": "admin_user_id", "value": "1" },
+                { "key": "action_type", "value": "pause_publisher" },
+                { "key": "target_type", "value": "publisher", "description": "offer, publisher, click, conversion, assignment, payment, invoice, system" },
+                { "key": "start_date", "value": "2024-01-01" },
+                { "key": "limit", "value": "100" },
+                { "key": "offset", "value": "0" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Create Force Action",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{auth_token}}", "type": "string" }] },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action_type\": \"pause_publisher_offer\",\n  \"target_type\": \"assignment\",\n  \"target_id\": 1,\n  \"action_data\": {},\n  \"reason\": \"Manual pause for investigation\",\n  \"expires_at\": \"2024-02-01T00:00:00Z\"\n}"
+            },
+            "url": { "raw": "{{base_url}}/api/admin/logs/force-actions", "host": ["{{base_url}}"], "path": ["api","admin","logs","force-actions"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin - Postback Retry",
+      "item": [
+        {
+          "name": "Get Failed Postbacks",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{auth_token}}", "type": "string" }] },
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/admin/postbacks/failed?publisher_id=1&status=failed&limit=100&offset=0",
+              "host": ["{{base_url}}"],
+              "path": ["api","admin","postbacks","failed"],
+              "query": [
+                { "key": "publisher_id", "value": "1" },
+                { "key": "status", "value": "failed", "description": "pending, failed" },
+                { "key": "limit", "value": "100" },
+                { "key": "offset", "value": "0" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Retry Postback",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{auth_token}}", "type": "string" }] },
+            "method": "POST",
+            "url": { "raw": "{{base_url}}/api/admin/postbacks/retry/:queueId", "host": ["{{base_url}}"], "path": ["api","admin","postbacks","retry",":queueId"], "variable": [{ "key": "queueId", "value": "1" }] }
           }
         }
       ]
