@@ -32,29 +32,37 @@ class OfferService {
       const sql = `
         INSERT INTO offers (
           advertiser_id,
-          name, description, category, status,
+          name, description, category, status, offer_visibility,
           offer_currency, country,
           advertiser_model, advertiser_amount,
           affiliate_model, affiliate_amount,
           offer_url, preview_url, token_type, macros_json,
           start_date, end_date, start_time, end_time,
           ip_action, ip_list,
-          device_targeting_json, os_targeting_json, browser_targeting_json,
+          device_targeting_json, device_action,
+          os_targeting_json, os_action,
+          browser_targeting_json, browser_action,
           isp_targeting_json, carrier_targeting_json, city_targeting_json,
-          capping_type, daily_cap, monthly_cap, total_cap, conversion_cap, budget_cap, cap_action,
+          capping_type, daily_cap, monthly_cap, total_cap, conversion_cap, capping_conversions_duration,
+          budget_cap, advertiser_capping_budget_duration, advertiser_capping_budget_amount,
+          advertiser_over_capping, affiliate_over_capping, cap_action,
           fallback_enabled, fallback_url, fallback_offer_id,
           advertiser_postback_url, advertiser_postback_method, advertiser_postback_macros_json,
           system_postback_url, system_postback_method, system_postback_macros_json
         ) VALUES (
-          ?, ?, ?, ?, ?,
+          ?, ?, ?, ?, ?, ?,
           ?, ?,
           ?, ?, ?, ?,
           ?, ?, ?, ?,
           ?, ?, ?, ?,
           ?, ?,
+          ?, ?,
+          ?, ?,
+          ?, ?,
+          ?, ?, ?,
+          ?, ?, ?, ?, ?, ?,
           ?, ?, ?,
           ?, ?, ?,
-          ?, ?, ?, ?, ?, ?, ?,
           ?, ?, ?,
           ?, ?, ?,
           ?, ?, ?
@@ -67,6 +75,7 @@ class OfferService {
         data.description || null,
         data.category || null,
         data.status || 'draft',
+        data.offer_visibility || null,
         data.offer_currency,
         data.country,
         data.advertiser_model,
@@ -84,8 +93,11 @@ class OfferService {
         data.ip_action || null,
         data.ip_list || null,
         toJsonOrNull(data.device_targeting_json),
+        data.device_action || null,
         toJsonOrNull(data.os_targeting_json),
+        data.os_action || null,
         toJsonOrNull(data.browser_targeting_json),
+        data.browser_action || null,
         toJsonOrNull(data.isp_targeting_json),
         toJsonOrNull(data.carrier_targeting_json),
         toJsonOrNull(data.city_targeting_json),
@@ -94,7 +106,12 @@ class OfferService {
         data.monthly_cap ?? null,
         data.total_cap ?? null,
         data.conversion_cap ?? null,
+        data.capping_conversions_duration || null,
         data.budget_cap ?? null,
+        data.advertiser_capping_budget_duration || null,
+        data.advertiser_capping_budget_amount ?? null,
+        data.advertiser_over_capping || null,
+        data.affiliate_over_capping || null,
         data.cap_action || null,
         data.fallback_enabled ? 1 : 0,
         data.fallback_url || null,
@@ -136,6 +153,7 @@ class OfferService {
         'description',
         'category',
         'status',
+        'offer_visibility',
         'offer_currency',
         'country',
         'advertiser_model',
@@ -153,8 +171,11 @@ class OfferService {
         'ip_action',
         'ip_list',
         'device_targeting_json',
+        'device_action',
         'os_targeting_json',
+        'os_action',
         'browser_targeting_json',
+        'browser_action',
         'isp_targeting_json',
         'carrier_targeting_json',
         'city_targeting_json',
@@ -163,7 +184,12 @@ class OfferService {
         'monthly_cap',
         'total_cap',
         'conversion_cap',
+        'capping_conversions_duration',
         'budget_cap',
+        'advertiser_capping_budget_duration',
+        'advertiser_capping_budget_amount',
+        'advertiser_over_capping',
+        'affiliate_over_capping',
         'cap_action',
         'fallback_enabled',
         'fallback_url',
@@ -414,6 +440,11 @@ class OfferService {
     if (filters.category) {
       conditions.push('category = ?');
       params.push(filters.category);
+    }
+
+    if (filters.offer_visibility) {
+      conditions.push('offer_visibility = ?');
+      params.push(filters.offer_visibility);
     }
 
     if (filters.search) {
