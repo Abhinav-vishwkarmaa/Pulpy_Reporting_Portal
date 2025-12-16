@@ -14,3 +14,5 @@ ADD COLUMN offer_url TEXT NULL DEFAULT NULL;
 ALTER TABLE publisher_offers 
 ADD KEY idx_po_capping_budget (capping_budget_duration, capping_budget_amount),
 ADD KEY idx_po_capping_conversions (capping_conversions_duration, capping_conversions_amount);
+
+

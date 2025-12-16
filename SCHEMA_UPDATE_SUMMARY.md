@@ -121,3 +121,5 @@ ADD KEY idx_po_capping_conversions (capping_conversions_duration, capping_conver
 - All new fields are **NULLABLE** - existing assignments will continue to work
 - Legacy `cap_override` field is still present for backward compatibility
 - The assignment service supports both old and new formats
+
+

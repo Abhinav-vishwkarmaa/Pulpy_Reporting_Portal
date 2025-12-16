@@ -283,3 +283,5 @@ curl -X PATCH http://localhost:3000/api/admin/publishers/1 \
     "company_name": "Updated Company"
   }'
 ```
+
+

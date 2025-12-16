@@ -4,7 +4,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { extractIP } from '../utils/ipExtractor.js';
 import { parseDevice } from '../utils/deviceParser.js';
 import { getCountryFromHeaders } from '../utils/countryLookup.js';
-import { extractDomain, appendClickParams } from '../utils/urlGenerator.js';
+import { extractDomain, appendClickParams, replaceMacros } from '../utils/urlGenerator.js';
 import offerService from './offerService.js';
 import publisherService from './publisherService.js';
 import assignmentService from './assignmentService.js';
@@ -135,22 +135,26 @@ export class TrackingService {
       const [clickRows] = await pool.query('SELECT id, click_uuid FROM clicks WHERE id = ?', [clickId]);
       const click = Array.isArray(clickRows) ? clickRows[0] : clickRows;
       
-      // Determine redirect URL - use assignment.offer_url if available, otherwise offer.offer_url
-      let redirectUrl = assignment.offer_url || offer.offer_url;
+      // Determine redirect URL using priority: assignment.destination_url OR offer.offer_url
+      // assignment.destination_url is an override, offer.offer_url is the default
+      let redirectUrl = assignment.destination_url || offer.offer_url;
       
       if (offer.status === 'deactivate') {
         redirectUrl = offer.fallback_url || redirectUrl;
       }
       
-      // Replace macros in assignment URL
-      if (assignment.offer_url) {
-        redirectUrl = redirectUrl
-          .replace(/{TID}/g, query.tid || '')
-          .replace(/{RCID}/g, query.rcid || '')
-          .replace(/{CLICK_ID}/g, click.click_uuid);
+      if (!redirectUrl) {
+        throw new Error('No destination URL available for redirect');
       }
       
-      // Append click parameters
+      // Replace macros in URL ({click_id}, {rcid}, {tid})
+      redirectUrl = replaceMacros(redirectUrl, {
+        click_id: click.click_uuid,
+        rcid: query.rcid || '',
+        tid: query.tid || '',
+      });
+      
+      // Append click parameters as query string (if not already in URL via macros)
       redirectUrl = appendClickParams(redirectUrl, {
         click_id: click.click_uuid,
         tid: query.tid || null,

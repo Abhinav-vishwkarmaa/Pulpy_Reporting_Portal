@@ -91,6 +91,20 @@ class OfferController {
       return reply.code(500).send(buildError('Failed to delete offer'));
     }
   }
+
+  async updateAssignment(request, reply) {
+    try {
+      const assignment = await offerService.updateAssignment(request.params.assignmentId, request.body);
+      if (!assignment) {
+        return reply.code(404).send(buildError('Assignment not found', 404, 'Not Found'));
+      }
+      return reply.send(buildSuccess(assignment, 'Assignment updated successfully'));
+    } catch (error) {
+      logger.error('OfferController.updateAssignment error:', error);
+      const status = error.statusCode || 500;
+      return reply.code(status).send(buildError(error.message || 'Failed to update assignment', status));
+    }
+  }
 }
 
 export default new OfferController();

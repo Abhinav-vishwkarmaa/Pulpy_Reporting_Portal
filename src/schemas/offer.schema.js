@@ -60,7 +60,7 @@ export const createOfferSchema = {
     affiliate_amount: { type: 'number' },
 
     offer_url: { type: 'string', format: 'uri', maxLength: 500 },
-    preview_url: { type: ['string', 'null'], format: 'uri', maxLength: 500 },
+    preview_url: { type: ['string', 'null'], maxLength: 500 },
     token_type: { type: ['string', 'null'], maxLength: 100 },
     macros_json: { type: ['object', 'null'] },
 
@@ -119,7 +119,7 @@ export const updateOfferSchema = {
     affiliate_amount: { type: 'number' },
 
     offer_url: { type: 'string', format: 'uri', maxLength: 500 },
-    preview_url: { type: ['string', 'null'], format: 'uri', maxLength: 500 },
+    preview_url: { type: ['string', 'null'], maxLength: 500 },
     token_type: { type: ['string', 'null'], maxLength: 100 },
     macros_json: { type: ['object', 'null'] },
 
@@ -155,6 +155,33 @@ export const updateOfferSchema = {
     system_postback_url: { type: ['string', 'null'], format: 'uri', maxLength: 500 },
     system_postback_method: { type: ['string', 'null'], maxLength: 10 },
     system_postback_macros_json: { type: ['object', 'null'] },
+  },
+};
+
+export const assignmentIdParamSchema = {
+  type: 'object',
+  required: ['assignmentId'],
+  properties: {
+    assignmentId: { type: 'integer', minimum: 1 },
+  },
+};
+
+export const updateAssignmentSchema = {
+  type: 'object',
+  additionalProperties: false,
+  minProperties: 1,
+  properties: {
+    payout_override: { type: ['number', 'null'], minimum: 0 },
+    cap_override: { type: ['integer', 'null'], minimum: 0 },
+    conversion_approval_percentage: { type: ['number', 'null'], minimum: 0, maximum: 100 },
+    capping_budget_duration: { type: ['string', 'null'], enum: ['daily', 'weekly', 'monthly'] },
+    capping_budget_amount: { type: ['number', 'null'], minimum: 0 },
+    capping_conversions_duration: { type: ['string', 'null'], enum: ['daily', 'weekly', 'monthly'] },
+    capping_conversions_amount: { type: ['integer', 'null'], minimum: 0 },
+    callback_url: { type: ['string', 'null'], format: 'uri' },
+    offer_url: { type: ['string', 'null'], format: 'uri' },
+    status: { type: 'string', enum: ['active', 'inactive', 'suspended'] },
+    notes: { type: ['string', 'null'] },
   },
 };
 

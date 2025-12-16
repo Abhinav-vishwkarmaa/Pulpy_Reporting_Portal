@@ -7,7 +7,7 @@ import { createErrorResponse } from '../utils/errorResponse.js';
 import { createOfferSchema, updateOfferStatusSchema } from '../validators/offerValidator.js';
 import { updateOfferSchema } from '../validators/offerValidator.js';
 import { createPublisherSchema, updatePublisherSchema } from '../validators/publisherValidator.js';
-import { createAssignmentSchema } from '../validators/assignmentValidator.js';
+import { createAssignmentSchema, updateAssignmentSchema } from '../validators/assignmentValidator.js';
 import { testConversionSchema } from '../validators/trackingValidator.js';
 
 export class AdminController {
@@ -351,6 +351,7 @@ export class AdminController {
   async createAssignment(request, reply) {
     try {
       // Validate request body
+      console.log(request.body);
       const { error, value } = createAssignmentSchema.validate(request.body, {
         abortEarly: false,
         stripUnknown: true,
@@ -411,17 +412,56 @@ export class AdminController {
     }
   }
 
-  async deleteAssignment(request, reply) {
+  async updateAssignment(request, reply) {
     try {
-      const ok = await assignmentService.delete(request.params.id);
-      if (!ok) {
+      const { error, value } = updateAssignmentSchema.validate(request.body, {
+        abortEarly: false,
+        stripUnknown: true,
+      });
+
+      if (error) {
+        const validationErrors = error.details.map((detail) => ({
+          field: detail.path.join('.'),
+          message: detail.message,
+        }));
+        return reply.code(400).send({
+          success: false,
+          error: 'Validation Error',
+          message: 'Request validation failed',
+          details: validationErrors,
+        });
+      }
+
+      const updated = await assignmentService.update(request.params.id, value);
+      if (!updated) {
         return reply.code(404).send({
           success: false,
           error: 'Not Found',
           message: 'Assignment not found',
         });
       }
-      return reply.send({ success: true });
+
+      return reply.send({
+        success: true,
+        data: updated,
+      });
+    } catch (error) {
+      logger.error('AdminController.updateAssignment error:', error);
+      return reply.code(500).send(createErrorResponse(error, 500));
+    }
+  }
+
+  async deleteAssignment(request, reply) {
+    try {
+      const deleted = await assignmentService.delete(request.params.id);
+      if (!deleted) {
+        return reply.code(404).send({
+          success: false,
+          error: 'Not Found',
+          message: 'Assignment not found',
+        });
+      }
+      return reply.send({ success: true, data: deleted });
     } catch (error) {
       logger.error('AdminController.deleteAssignment error:', error);
       return reply.code(500).send(createErrorResponse(error, 500));

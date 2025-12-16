@@ -1,9 +1,9 @@
 {
   "info": {
-    "name": "BNG MIS Reporting Portal - Complete API Collection",
-    "description": "Complete API collection with all routes including Publishers, Offers, Advertisers, Assignments, Tracking, Postback, and Reporting. Supports both Basic Auth and JWT Bearer tokens.",
+    "name": "Pulpy - Complete API Collection",
+    "description": "Complete API collection with all routes including Publishers, Offers, Advertisers, Assignments, Tracking, Postback, and Reporting. Supports both Basic Auth and JWT Bearer tokens.\n\n**Assignment Changes (v2.1.0):**\n- Tracking URLs are now dynamic and generated at runtime (not stored in database)\n- `destination_url` replaces `offer_url` (optional override, defaults to `offer.offer_url`)\n- `callback_url` is optional override (defaults to `publisher.global_postback_url`)\n- URLs must contain `{click_id}` or `{rcid}` macro when provided\n- Use `/assignments/:id/tracking-url` to get dynamic tracking URL for publishers",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
-    "version": "2.0.0"
+    "version": "2.1.0"
   },
   "auth": {
     "type": "bearer",
@@ -310,9 +310,10 @@
             "header": [{ "key": "Content-Type", "value": "application/json" }],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"offer_id\": 10,\n  \"publishers\": [\n    {\n      \"publisher_id\": 7,\n      \"payout_override\": 1.50,\n      \"conversion_approval_percentage\": 50,\n      \"capping_budget\": {\n        \"duration\": \"day\",\n        \"amount\": 100\n      },\n      \"capping_conversions\": {\n        \"duration\": \"day\",\n        \"amount\": 50\n      },\n      \"callback_url\": \"https://affiliate.com/postback?click_id={click_id}&payout={payout}\",\n      \"offer_url\": \"https://pulpy.com/click?offer_id=10&publisher_id=7&tid={TID}\",\n      \"notes\": \"Top publisher\",\n      \"status\": \"active\"\n    },\n    {\n      \"publisher_id\": 9,\n      \"payout_override\": 2.00,\n      \"conversion_approval_percentage\": 70,\n      \"capping_budget\": {\n        \"duration\": \"month\",\n        \"amount\": 500\n      },\n      \"capping_conversions\": {\n        \"duration\": \"month\",\n        \"amount\": 200\n      },\n      \"callback_url\": \"https://aff9.com/cb?cid={click_id}\",\n      \"offer_url\": \"https://pulpy.com/click?offer_id=10&publisher_id=9&tid={TID}\",\n      \"notes\": \"\",\n      \"status\": \"active\"\n    }\n  ]\n}"
+              "raw": "{\n  \"offer_id\": 10,\n  \"publishers\": [\n    {\n      \"publisher_id\": 7,\n      \"payout_override\": 1.50,\n      \"conversion_approval_percentage\": 50,\n      \"capping_budget\": {\n        \"duration\": \"day\",\n        \"amount\": 100\n      },\n      \"capping_conversions\": {\n        \"duration\": \"day\",\n        \"amount\": 50\n      },\n      \"callback_url\": \"https://affiliate.com/postback?click_id={click_id}&payout={payout}\",\n      \"destination_url\": \"https://advertiser.com/landing?click_id={click_id}&rcid={rcid}\",\n      \"notes\": \"Top publisher - custom destination URL override\",\n      \"status\": \"active\"\n    },\n    {\n      \"publisher_id\": 9,\n      \"payout_override\": 2.00,\n      \"conversion_approval_percentage\": 70,\n      \"capping_budget\": {\n        \"duration\": \"month\",\n        \"amount\": 500\n      },\n      \"capping_conversions\": {\n        \"duration\": \"month\",\n        \"amount\": 200\n      },\n      \"notes\": \"Uses default offer.offer_url and publisher.global_postback_url\",\n      \"status\": \"active\"\n    }\n  ]\n}"
             },
-            "url": { "raw": "{{base_url}}/api/admin/assignments", "host": ["{{base_url}}"], "path": ["api","admin","assignments"] }
+            "url": { "raw": "{{base_url}}/api/admin/assignments", "host": ["{{base_url}}"], "path": ["api","admin","assignments"] },
+            "description": "Create assignments for multiple publishers.\n\n**Important:**\n- Tracking URLs are NOT stored - they are generated dynamically at runtime\n- `destination_url` is optional - if not provided, uses `offer.offer_url`\n- `callback_url` is optional - if not provided, uses `publisher.global_postback_url`\n- URLs must contain `{click_id}` or `{rcid}` macro when provided\n- Get tracking URL from `/assignments/:id/tracking-url` endpoint"
           }
         },
         {
@@ -337,7 +338,22 @@
           "request": {
             "auth": { "type": "basic", "basic": [{ "key": "username", "value": "admin@bng.com", "type": "string" }, { "key": "password", "value": "admin123", "type": "string" }] },
             "method": "GET",
-            "url": { "raw": "{{base_url}}/api/admin/assignments/:id", "host": ["{{base_url}}"], "path": ["api","admin","assignments",":id"], "variable": [{ "key": "id", "value": "1" }] }
+            "url": { "raw": "{{base_url}}/api/admin/assignments/:id", "host": ["{{base_url}}"], "path": ["api","admin","assignments",":id"], "variable": [{ "key": "id", "value": "1" }] },
+            "description": "Get assignment details. Returns `destination_url` (null if using offer default) and `callback_url` (null if using publisher default)."
+          }
+        },
+        {
+          "name": "Update Assignment",
+          "request": {
+            "auth": { "type": "basic", "basic": [{ "key": "username", "value": "admin@bng.com", "type": "string" }, { "key": "password", "value": "admin123", "type": "string" }] },
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"payout_override\": 18.00,\n  \"conversion_approval_percentage\": 90,\n  \"capping_budget\": {\n    \"duration\": \"week\",\n    \"amount\": 1000.00\n  },\n  \"destination_url\": \"https://custom-landing.com?click_id={click_id}&rcid={rcid}\",\n  \"callback_url\": \"https://custom-postback.com?click_id={click_id}&payout={payout}\",\n  \"status\": \"active\",\n  \"notes\": \"Updated assignment settings\"\n}"
+            },
+            "url": { "raw": "{{base_url}}/api/admin/assignments/:id", "host": ["{{base_url}}"], "path": ["api","admin","assignments",":id"], "variable": [{ "key": "id", "value": "1" }] },
+            "description": "Update assignment. All fields are optional. URLs must contain `{click_id}` or `{rcid}` macro if provided."
           }
         },
         {
@@ -345,7 +361,8 @@
           "request": {
             "auth": { "type": "basic", "basic": [{ "key": "username", "value": "admin@bng.com", "type": "string" }, { "key": "password", "value": "admin123", "type": "string" }] },
             "method": "GET",
-            "url": { "raw": "{{base_url}}/api/admin/assignments/:id/tracking-url", "host": ["{{base_url}}"], "path": ["api","admin","assignments",":id","tracking-url"], "variable": [{ "key": "id", "value": "1" }] }
+            "url": { "raw": "{{base_url}}/api/admin/assignments/:id/tracking-url", "host": ["{{base_url}}"], "path": ["api","admin","assignments",":id","tracking-url"], "variable": [{ "key": "id", "value": "1" }] },
+            "description": "Get dynamic tracking URL for assignment. This URL is generated at runtime and should be used by publishers to track clicks. Format: `{BASE_URL}/click?offer_id={offer_id}&pub_id={publisher_id}&tid={TID}`"
           }
         },
         {
@@ -353,7 +370,8 @@
           "request": {
             "auth": { "type": "basic", "basic": [{ "key": "username", "value": "admin@bng.com", "type": "string" }, { "key": "password", "value": "admin123", "type": "string" }] },
             "method": "DELETE",
-            "url": { "raw": "{{base_url}}/api/admin/assignments/:id", "host": ["{{base_url}}"], "path": ["api","admin","assignments",":id"], "variable": [{ "key": "id", "value": "1" }] }
+            "url": { "raw": "{{base_url}}/api/admin/assignments/:id", "host": ["{{base_url}}"], "path": ["api","admin","assignments",":id"], "variable": [{ "key": "id", "value": "1" }] },
+            "description": "Soft delete assignment (sets status to 'inactive'). Data is preserved for reporting."
           }
         }
       ]

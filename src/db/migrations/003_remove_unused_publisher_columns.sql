@@ -18,3 +18,5 @@ ALTER TABLE publishers DROP COLUMN tax_invoice_details;
 ALTER TABLE publishers DROP COLUMN payment_terms;
 
 -- If you get errors about columns not existing, that's fine - they may have already been removed
+
+

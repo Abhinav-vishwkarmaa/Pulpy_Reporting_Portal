@@ -15,6 +15,7 @@ async function adminRoutes(fastify) {
 
   // Assignment routes
   fastify.post('/assignments', adminController.createAssignment);
+  fastify.patch('/assignments/:id', adminController.updateAssignment);
   fastify.get('/assignments', adminController.listAssignments);
   fastify.get('/assignments/:id', adminController.getAssignment);
   fastify.get('/assignments/:id/tracking-url', adminController.getTrackingURL);

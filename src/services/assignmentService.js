@@ -49,17 +49,10 @@ export class AssignmentService {
           continue;
         }
 
-        // Auto-generate offer_url if not provided
-        let offerUrl = pubData.offer_url;
-        if (!offerUrl || offerUrl === '') {
-          offerUrl = generateTrackingURL(baseURL, offer_id, pubData.publisher_id, { tid: '{TID}' });
-        }
-
-        // Auto-generate callback_url if not provided (use publisher's global_postback_url)
-        let callbackUrl = pubData.callback_url;
-        if (!callbackUrl || callbackUrl === '') {
-          callbackUrl = publisher.global_postback_url || null;
-        }
+        // Store destination_url only if explicitly provided (override)
+        // Do NOT generate tracking URLs - they are dynamic and generated at runtime
+        const destinationUrl = pubData.destination_url || pubData.offer_url || null; // Support legacy field name
+        const callbackUrl = pubData.callback_url || null; // Store only if explicitly provided (override)
 
         // Prepare capping data
         const cappingBudgetDuration = pubData.capping_budget?.duration || null;
@@ -74,7 +67,7 @@ export class AssignmentService {
             conversion_approval_percentage,
             capping_budget_duration, capping_budget_amount,
             capping_conversions_duration, capping_conversions_amount,
-            callback_url, offer_url,
+            callback_url, destination_url,
             notes, status, assigned_at
           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
           ON DUPLICATE KEY UPDATE 
@@ -85,7 +78,7 @@ export class AssignmentService {
             capping_conversions_duration = VALUES(capping_conversions_duration),
             capping_conversions_amount = VALUES(capping_conversions_amount),
             callback_url = VALUES(callback_url),
-            offer_url = VALUES(offer_url),
+            destination_url = VALUES(destination_url),
             notes = VALUES(notes),
             status = VALUES(status)`,
           [
@@ -98,7 +91,7 @@ export class AssignmentService {
             cappingConversionsDuration,
             cappingConversionsAmount,
             callbackUrl,
-            offerUrl,
+            destinationUrl,
             pubData.notes || null,
             pubData.status || 'active',
           ]
@@ -162,21 +155,22 @@ export class AssignmentService {
       throw new Error('Offer not found');
     }
 
-    const baseURL = process.env.BASE_URL || process.env.TRACKING_BASE_URL || 'http://localhost:3000';
-    const offerUrl = generateTrackingURL(baseURL, data.offer_id, data.publisher_id, { tid: '{TID}' });
-    const callbackUrl = publisher.global_postback_url || null;
+    // Store destination_url only if explicitly provided (override)
+    // Do NOT generate tracking URLs - they are dynamic and generated at runtime
+    const destinationUrl = data.destination_url || data.offer_url || null; // Support legacy field name
+    const callbackUrl = data.callback_url || null; // Store only if explicitly provided (override)
     
     await pool.query(
       `INSERT INTO publisher_offers (
         publisher_id, offer_id, payout_override, cap_override, 
-        callback_url, offer_url,
+        callback_url, destination_url,
         notes, status, assigned_at
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())
       ON DUPLICATE KEY UPDATE 
         payout_override = VALUES(payout_override),
         cap_override = VALUES(cap_override),
         callback_url = VALUES(callback_url),
-        offer_url = VALUES(offer_url),
+        destination_url = VALUES(destination_url),
         notes = VALUES(notes),
         status = VALUES(status)`,
       [
@@ -185,7 +179,7 @@ export class AssignmentService {
         data.payout_override || null,
         data.cap_override || null,
         callbackUrl,
-        offerUrl,
+        destinationUrl,
         data.notes || null,
         data.status || 'active',
       ]
@@ -226,7 +220,7 @@ export class AssignmentService {
         amount: assignment.capping_conversions_amount,
       } : null,
       callback_url: assignment.callback_url,
-      offer_url: assignment.offer_url,
+      destination_url: assignment.destination_url,
       notes: assignment.notes,
       status: assignment.status,
       assigned_at: assignment.assigned_at,
@@ -315,9 +309,91 @@ export class AssignmentService {
     return offer ? parseFloat(offer.affiliate_model_cost) : null;
   }
 
+  async update(id, data) {
+    try {
+      // First check if assignment exists
+      const existing = await this.findById(id);
+      if (!existing) {
+        return null;
+      }
+
+      // Prepare update fields
+      const cappingBudgetDuration = data.capping_budget?.duration || null;
+      const cappingBudgetAmount = data.capping_budget?.amount || null;
+      const cappingConversionsDuration = data.capping_conversions?.duration || null;
+      const cappingConversionsAmount = data.capping_conversions?.amount || null;
+
+      // Build update query dynamically based on provided fields
+      const updateFields = [];
+      const updateValues = [];
+
+      if (data.payout_override !== undefined) {
+        updateFields.push('payout_override = ?');
+        updateValues.push(data.payout_override);
+      }
+      if (data.conversion_approval_percentage !== undefined) {
+        updateFields.push('conversion_approval_percentage = ?');
+        updateValues.push(data.conversion_approval_percentage);
+      }
+      if (data.capping_budget !== undefined) {
+        updateFields.push('capping_budget_duration = ?', 'capping_budget_amount = ?');
+        updateValues.push(cappingBudgetDuration, cappingBudgetAmount);
+      }
+      if (data.capping_conversions !== undefined) {
+        updateFields.push('capping_conversions_duration = ?', 'capping_conversions_amount = ?');
+        updateValues.push(cappingConversionsDuration, cappingConversionsAmount);
+      }
+      if (data.callback_url !== undefined) {
+        updateFields.push('callback_url = ?');
+        updateValues.push(data.callback_url || null);
+      }
+      if (data.destination_url !== undefined || data.offer_url !== undefined) {
+        // Support both new field name and legacy field name
+        const destinationUrl = data.destination_url !== undefined ? data.destination_url : data.offer_url;
+        updateFields.push('destination_url = ?');
+        updateValues.push(destinationUrl || null);
+      }
+      if (data.notes !== undefined) {
+        updateFields.push('notes = ?');
+        updateValues.push(data.notes || null);
+      }
+      if (data.status !== undefined) {
+        updateFields.push('status = ?');
+        updateValues.push(data.status);
+      }
+
+      if (updateFields.length === 0) {
+        // No fields to update, return existing assignment
+        return existing;
+      }
+
+      // Add id to updateValues for WHERE clause
+      updateValues.push(id);
+
+      // Execute update
+      await pool.query(
+        `UPDATE publisher_offers SET ${updateFields.join(', ')} WHERE id = ?`,
+        updateValues
+      );
+
+      // Return updated assignment
+      return await this.findById(id);
+    } catch (error) {
+      logger.error('AssignmentService.update error:', error);
+      throw error;
+    }
+  }
+
   async delete(id) {
-    const [result] = await pool.query(`DELETE FROM publisher_offers WHERE id = ?`, [id]);
-    return (result.affectedRows || 0) > 0;
+    // Soft delete: set status to 'inactive' instead of deleting from database
+    const [result] = await pool.query(
+      `UPDATE publisher_offers SET status = 'inactive' WHERE id = ?`,
+      [id]
+    );
+    if (result.affectedRows === 0) {
+      return null;
+    }
+    return this.findById(id);
   }
 }
 

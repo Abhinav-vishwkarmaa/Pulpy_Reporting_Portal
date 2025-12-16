@@ -4,6 +4,8 @@ import { v4 as uuidv4 } from 'uuid';
 import { extractIP } from '../utils/ipExtractor.js';
 import assignmentService from './assignmentService.js';
 import offerService from './offerService.js';
+import publisherService from './publisherService.js';
+import { replaceMacros } from '../utils/urlGenerator.js';
 import https from 'https';
 import http from 'http';
 
@@ -225,9 +227,18 @@ export class PostbackService {
       // Update daily stats
       await this.updateDailyStats(offerId, conversionAmount, payout);
       
-      // Send postback to publisher's callback_url if assignment has one
-      if (assignment?.callback_url && conversion) {
-        await this.sendPublisherPostback(assignment.callback_url, conversion, click);
+      // Get publisher for global_postback_url fallback
+      let publisher = null;
+      if (publisherId) {
+        publisher = await publisherService.findById(publisherId);
+      }
+      
+      // Resolve callback URL: assignment.callback_url OR publisher.global_postback_url
+      const callbackUrl = assignment?.callback_url || publisher?.global_postback_url;
+      
+      // Send postback to publisher's callback URL if available
+      if (callbackUrl && conversion) {
+        await this.sendPublisherPostback(callbackUrl, conversion, click);
       }
       
       return {
@@ -338,40 +349,46 @@ export class PostbackService {
 
   async sendPublisherPostback(callbackUrl, conversion, click) {
     try {
-      // Replace macros in callback URL
-      let url = callbackUrl
-        .replace(/{click_id}/g, conversion.click_uuid || click?.click_uuid || '')
-        .replace(/{CLICK_ID}/g, conversion.click_uuid || click?.click_uuid || '')
-        .replace(/{conversion_id}/g, conversion.conversion_uuid || '')
-        .replace(/{CONVERSION_ID}/g, conversion.conversion_uuid || '')
-        .replace(/{rcid}/g, conversion.rcid || '')
-        .replace(/{RCID}/g, conversion.rcid || '')
-        .replace(/{payout}/g, conversion.payout || '0')
-        .replace(/{PAYOUT}/g, conversion.payout || '0')
-        .replace(/{amount}/g, conversion.amount || '0')
-        .replace(/{AMOUNT}/g, conversion.amount || '0')
-        .replace(/{status}/g, conversion.status || 'pending')
-        .replace(/{STATUS}/g, conversion.status || 'pending');
+      // Replace macros in callback URL using replaceMacros function
+      const url = replaceMacros(callbackUrl, {
+        click_id: conversion.click_uuid || click?.click_uuid || '',
+        conversion_id: conversion.conversion_uuid || '',
+        rcid: conversion.rcid || '',
+        payout: conversion.payout?.toString() || '0',
+        amount: conversion.amount?.toString() || '0',
+        status: conversion.status || 'pending',
+      });
+      
+      // Also replace additional macros that might be used
+      let finalUrl = url
+        .replace(/{conversion_id}/gi, conversion.conversion_uuid || '')
+        .replace(/{CONVERSION_ID}/gi, conversion.conversion_uuid || '')
+        .replace(/{payout}/gi, conversion.payout?.toString() || '0')
+        .replace(/{PAYOUT}/gi, conversion.payout?.toString() || '0')
+        .replace(/{amount}/gi, conversion.amount?.toString() || '0')
+        .replace(/{AMOUNT}/gi, conversion.amount?.toString() || '0')
+        .replace(/{status}/gi, conversion.status || 'pending')
+        .replace(/{STATUS}/gi, conversion.status || 'pending');
 
       // Send GET request to publisher callback URL (async, fire and forget)
-      const urlObj = new URL(url);
+      const urlObj = new URL(finalUrl);
       const client = urlObj.protocol === 'https:' ? https : http;
       
-      const req = client.get(url, { timeout: 5000 }, (res) => {
+      const req = client.get(finalUrl, { timeout: 5000 }, (res) => {
         // Log success but don't wait
-        logger.info(`Postback sent to publisher: ${url} - Status: ${res.statusCode}`);
+        logger.info(`Postback sent to publisher: ${finalUrl} - Status: ${res.statusCode}`);
         res.on('data', () => {}); // Consume response
         res.on('end', () => {});
       });
 
       req.on('error', (err) => {
-        logger.error(`PostbackService.sendPublisherPostback error for ${url}:`, err.message);
+        logger.error(`PostbackService.sendPublisherPostback error for ${finalUrl}:`, err.message);
         // Don't throw - postback failures shouldn't fail the conversion
       });
 
       req.on('timeout', () => {
         req.destroy();
-        logger.warn(`PostbackService.sendPublisherPostback timeout for ${url}`);
+        logger.warn(`PostbackService.sendPublisherPostback timeout for ${finalUrl}`);
       });
 
       req.setTimeout(5000);

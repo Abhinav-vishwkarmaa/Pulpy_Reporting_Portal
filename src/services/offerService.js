@@ -14,9 +14,9 @@ export class OfferService {
       const [result] = await pool.query(
         `INSERT INTO offers (
           name, category, advertiser_revenue, affiliate_model_cost,
-          start_at, end_at, offer_url, capping_per_day, fallback_url,
+          start_at, end_at, offer_url, preview_url, capping_per_day, fallback_url,
           status, url_key, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
         [
           data.name,
           data.category,
@@ -25,6 +25,7 @@ export class OfferService {
           startAt,
           endAt,
           data.offer_url,
+          data.preview_url || null,
           data.capping_per_day || 0,
           data.fallback_url || null,
           data.status || 'pending',
@@ -109,7 +110,7 @@ export class OfferService {
           amount: assignment.capping_conversions_amount,
         } : null,
         callback_url: assignment.callback_url,
-        offer_url: assignment.offer_url,
+        destination_url: assignment.destination_url,
         notes: assignment.notes,
         status: assignment.status,
         assigned_at: assignment.assigned_at,

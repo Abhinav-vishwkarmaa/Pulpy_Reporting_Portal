@@ -1,10 +1,12 @@
 import offerController from '../controllers/offer.controller.js';
 import { authenticateAdmin } from '../middleware/auth.js';
 import {
+  assignmentIdParamSchema,
   changeOfferStatusSchema,
   createOfferSchema,
   listOffersQuerySchema,
   offerIdParamSchema,
+  updateAssignmentSchema,
   updateOfferSchema,
 } from '../schemas/offer.schema.js';
 
@@ -54,6 +56,18 @@ async function offerRoutes(fastify) {
       },
     },
     offerController.deleteOffer
+  );
+
+  fastify.patch(
+    '/api/admin/offers/assignments/:assignmentId',
+    {
+      preHandler: authenticateAdmin,
+      schema: {
+        params: assignmentIdParamSchema,
+        body: updateAssignmentSchema,
+      },
+    },
+    offerController.updateAssignment
   );
 
   // Public GETs

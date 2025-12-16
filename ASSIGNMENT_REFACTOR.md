@@ -401,3 +401,5 @@ curl -X POST http://localhost:3000/api/admin/assignments \
 - [ ] Test findAll() returns formatted data
 - [ ] Test capping_budget and capping_conversions persistence
 - [ ] Test conversion_approval_percentage validation (0-100)
+
+

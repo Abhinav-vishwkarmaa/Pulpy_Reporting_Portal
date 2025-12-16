@@ -29,6 +29,32 @@ export function extractDomain(referrer) {
   }
 }
 
+/**
+ * Replace macros in URLs with actual values
+ * Supported macros: {click_id}, {CLICK_ID}, {rcid}, {RCID}, {tid}, {TID}
+ */
+export function replaceMacros(url, macroValues = {}) {
+  if (!url) return url;
+  
+  let result = url;
+  
+  // Replace macros (case-insensitive)
+  if (macroValues.click_id) {
+    result = result.replace(/{click_id}/gi, macroValues.click_id);
+    result = result.replace(/{CLICK_ID}/gi, macroValues.click_id);
+  }
+  if (macroValues.rcid) {
+    result = result.replace(/{rcid}/gi, macroValues.rcid);
+    result = result.replace(/{RCID}/gi, macroValues.rcid);
+  }
+  if (macroValues.tid) {
+    result = result.replace(/{tid}/gi, macroValues.tid);
+    result = result.replace(/{TID}/gi, macroValues.tid);
+  }
+  
+  return result;
+}
+
 export function appendClickParams(offerUrl, clickData) {
   try {
     const url = new URL(offerUrl);

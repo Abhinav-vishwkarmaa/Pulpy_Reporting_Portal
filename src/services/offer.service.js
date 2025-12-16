@@ -287,7 +287,7 @@ class OfferService {
           amount: assignment.capping_conversions_amount,
         } : null,
         callback_url: assignment.callback_url,
-        offer_url: assignment.offer_url,
+        destination_url: assignment.destination_url,
         notes: assignment.notes,
         status: assignment.status,
         assigned_at: assignment.assigned_at,
@@ -483,6 +483,115 @@ class OfferService {
       logger.error('OfferService.changeStatus error:', error);
       throw error;
     }
+  }
+
+  async updateAssignment(assignmentId, data) {
+    try {
+      // First check if assignment exists
+      const [existingRows] = await pool.query(
+        'SELECT id FROM publisher_offers WHERE id = ?',
+        [assignmentId]
+      );
+      if (!existingRows || existingRows.length === 0) {
+        return null;
+      }
+
+      const fields = [];
+      const params = [];
+
+      const updatable = [
+        'payout_override',
+        'cap_override',
+        'conversion_approval_percentage',
+        'capping_budget_duration',
+        'capping_budget_amount',
+        'capping_conversions_duration',
+        'capping_conversions_amount',
+        'callback_url',
+        'offer_url',
+        'status',
+        'notes',
+      ];
+
+      updatable.forEach((key) => {
+        if (data[key] !== undefined) {
+          fields.push(`${key} = ?`);
+          params.push(data[key] ?? null);
+        }
+      });
+
+      if (!fields.length) {
+        return this.getAssignmentById(assignmentId);
+      }
+
+      params.push(assignmentId);
+
+      const sql = `UPDATE publisher_offers SET ${fields.join(', ')} WHERE id = ?`;
+      const [result] = await pool.query(sql, params);
+      if (!result.affectedRows) {
+        return null;
+      }
+
+      return this.getAssignmentById(assignmentId);
+    } catch (error) {
+      logger.error('OfferService.updateAssignment error:', error);
+      throw error;
+    }
+  }
+
+  async getAssignmentById(assignmentId) {
+    const [rows] = await pool.query(
+      `SELECT po.*,
+              p.id as publisher_id,
+              p.email as publisher_email,
+              p.first_name as publisher_first_name,
+              p.company_name as publisher_company,
+              p.country as publisher_country,
+              p.status as publisher_status,
+              o.id as offer_id,
+              o.name as offer_name,
+              o.status as offer_status
+       FROM publisher_offers po
+       JOIN publishers p ON po.publisher_id = p.id
+       JOIN offers o ON po.offer_id = o.id
+       WHERE po.id = ?
+       LIMIT 1`,
+      [assignmentId]
+    );
+
+    if (!rows || rows.length === 0) {
+      return null;
+    }
+
+    const assignment = rows[0];
+    return {
+      id: assignment.id,
+      publisher_id: assignment.publisher_id,
+      publisher_email: assignment.publisher_email,
+      publisher_first_name: assignment.publisher_first_name,
+      publisher_company: assignment.publisher_company,
+      publisher_country: assignment.publisher_country,
+      publisher_status: assignment.publisher_status,
+      offer_id: assignment.offer_id,
+      offer_name: assignment.offer_name,
+      offer_status: assignment.offer_status,
+      payout_override: assignment.payout_override,
+      cap_override: assignment.cap_override,
+      conversion_approval_percentage: assignment.conversion_approval_percentage,
+      capping_budget: assignment.capping_budget_duration ? {
+        duration: assignment.capping_budget_duration,
+        amount: assignment.capping_budget_amount,
+      } : null,
+      capping_conversions: assignment.capping_conversions_duration ? {
+        duration: assignment.capping_conversions_duration,
+        amount: assignment.capping_conversions_amount,
+      } : null,
+      callback_url: assignment.callback_url,
+      offer_url: assignment.offer_url,
+      status: assignment.status,
+      notes: assignment.notes,
+      assigned_at: assignment.assigned_at,
+    };
   }
 }
 
