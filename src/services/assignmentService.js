@@ -285,7 +285,7 @@ export class AssignmentService {
     if (!assignment) {
       return null;
     }
-
+    
     if (format === 'alternative') {
       // Get advertiser ID from offer
       const offer = await offerService.findById(assignment.offer_id);

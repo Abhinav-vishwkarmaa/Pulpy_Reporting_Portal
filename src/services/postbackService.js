@@ -296,8 +296,8 @@ export class PostbackService {
         }
         // Check if it's the rcid + offer_id unique constraint violation
         if (error.message && error.message.includes('uniq_rcid_offer')) {
-          return {
-            success: true,
+        return {
+          success: true,
             message: 'Conversion already exists (deduplicated by rcid)',
             duplicate: true,
             error_type: 'duplicate_rcid_offer'
