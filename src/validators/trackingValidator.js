@@ -24,7 +24,7 @@ export const postbackQuerySchema = Joi.object({
 });
 
 export const testConversionSchema = Joi.object({
-  affiliate_url: Joi.string().uri().required(),
+  affiliate_url: Joi.string().required(),
   click_id: Joi.string().allow('', null).optional(),
 });
 

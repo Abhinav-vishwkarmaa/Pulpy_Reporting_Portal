@@ -54,14 +54,49 @@ export class PostbackService {
       }
       
       // Get offer and assignment
-      const offerId = click ? click.offer_id : null;
+      let offerId = click ? click.offer_id : null;
+      
+      // If no offerId from click, try to find it from rcid (check previous conversion or click)
+      if (!offerId && rcid) {
+        // Try to find from existing conversion
+        const [convRows] = await pool.query(
+          'SELECT offer_id FROM conversions WHERE rcid = ? LIMIT 1',
+          [rcid]
+        );
+        if (convRows && convRows.length > 0) {
+          offerId = convRows[0].offer_id;
+        } else {
+          // Try to find from click with this rcid
+          const [clickRows] = await pool.query(
+            'SELECT offer_id FROM clicks WHERE rcid = ? LIMIT 1',
+            [rcid]
+          );
+          if (clickRows && clickRows.length > 0) {
+            offerId = clickRows[0].offer_id;
+          }
+        }
+      }
+      
       if (!offerId) {
-        throw new Error('Offer ID not found');
+        throw new Error('Offer ID not found. Cannot determine offer from click_id or rcid');
       }
       
       const offer = await offerService.findById(offerId);
       if (!offer) {
         throw new Error('Offer not found');
+      }
+
+      // Validate offer is active and not expired before processing conversion
+      // Pass checkTimeRestrictions=true for conversions
+      const offerValidation = offerService.checkOfferValidity(offer, true);
+      if (!offerValidation.valid) {
+        return {
+          success: false,
+          message: offerValidation.message,
+          error_type: offerValidation.error_type,
+          conversion: null,
+          duplicate: false,
+        };
       }
       
       const publisherId = click ? click.publisher_id : null;
@@ -248,13 +283,44 @@ export class PostbackService {
         duplicate: false,
       };
     } catch (error) {
-      if (error.code === '23505') { // Unique violation (rcid + offer_id)
+      // Handle MySQL duplicate key violations
+      if (error.code === 'ER_DUP_ENTRY') {
+        // Check if it's the click_uuid unique constraint violation
+        if (error.message && error.message.includes('uniq_click_uuid')) {
+          return {
+            success: false,
+            message: 'This click has already generated a conversion. One click can only give one conversion.',
+            duplicate: false,
+            error_type: 'duplicate_click_conversion'
+          };
+        }
+        // Check if it's the rcid + offer_id unique constraint violation
+        if (error.message && error.message.includes('uniq_rcid_offer')) {
+          return {
+            success: true,
+            message: 'Conversion already exists (deduplicated by rcid)',
+            duplicate: true,
+            error_type: 'duplicate_rcid_offer'
+          };
+        }
+        // Generic duplicate entry error
         return {
-          success: true,
-          message: 'Conversion already exists (deduplicated)',
+          success: false,
+          message: 'Duplicate entry detected',
           duplicate: true,
+          error_type: 'duplicate_entry'
         };
       }
+
+      // Handle other specific errors
+      if (error.code === 'ER_NO_REFERENCED_ROW' || error.code === 'ER_NO_REFERENCED_ROW_2') {
+        throw new Error('Invalid reference: The specified offer, publisher, or assignment does not exist');
+      }
+
+      if (error.code === 'ER_DATA_TOO_LONG') {
+        throw new Error('Data too long for one or more fields. Please check your input length.');
+      }
+
       logger.error('PostbackService.processPostback error:', error);
       throw error;
     }
@@ -396,6 +462,93 @@ export class PostbackService {
       logger.error('PostbackService.sendPublisherPostback error:', error);
       // Don't throw - postback failures shouldn't fail the conversion
     }
+  }
+
+  /**
+   * Validate offer is active and not expired before processing conversion
+   * @param {Object} offer - Offer object from database
+   * @returns {Object} - { valid: boolean, message: string, error_type: string }
+   */
+  validateOfferForConversion(offer) {
+    // Check offer status
+    if (offer.status !== 'live') {
+      return {
+        valid: false,
+        message: `Offer is not active. Current status: ${offer.status}. Only live offers can accept conversions.`,
+        error_type: 'offer_not_active'
+      };
+    }
+
+    const now = new Date();
+    const currentDate = now.toISOString().split('T')[0]; // YYYY-MM-DD
+    const currentTime = now.toTimeString().split(' ')[0]; // HH:MM:SS
+
+    // Check if offer has expired (end_date passed)
+    if (offer.end_date) {
+      const endDate = new Date(offer.end_date);
+      endDate.setHours(23, 59, 59, 999); // End of day
+      
+      if (now > endDate) {
+        return {
+          valid: false,
+          message: `Offer has expired. End date: ${offer.end_date}`,
+          error_type: 'offer_expired'
+        };
+      }
+    }
+
+    // Check if offer hasn't started yet (start_date in future)
+    if (offer.start_date) {
+      const startDate = new Date(offer.start_date);
+      startDate.setHours(0, 0, 0, 0); // Start of day
+      
+      if (now < startDate) {
+        return {
+          valid: false,
+          message: `Offer has not started yet. Start date: ${offer.start_date}`,
+          error_type: 'offer_not_started'
+        };
+      }
+    }
+
+    // Check time restrictions if both start_time and end_time are set
+    if (offer.start_time && offer.end_time) {
+      const startTime = offer.start_time;
+      const endTime = offer.end_time;
+      
+      // Compare times (HH:MM:SS format)
+      if (currentTime < startTime || currentTime > endTime) {
+        return {
+          valid: false,
+          message: `Conversion outside allowed time window. Allowed: ${startTime} - ${endTime}, Current: ${currentTime}`,
+          error_type: 'offer_time_restricted'
+        };
+      }
+    } else if (offer.start_time) {
+      // Only start_time set
+      if (currentTime < offer.start_time) {
+        return {
+          valid: false,
+          message: `Conversion before allowed start time. Start time: ${offer.start_time}, Current: ${currentTime}`,
+          error_type: 'offer_time_restricted'
+        };
+      }
+    } else if (offer.end_time) {
+      // Only end_time set
+      if (currentTime > offer.end_time) {
+        return {
+          valid: false,
+          message: `Conversion after allowed end time. End time: ${offer.end_time}, Current: ${currentTime}`,
+          error_type: 'offer_time_restricted'
+        };
+      }
+    }
+
+    return {
+      valid: true,
+      message: 'Offer is valid for conversion',
+      error_type: null
+    };
   }
 
   async isCapExceeded(offer) {

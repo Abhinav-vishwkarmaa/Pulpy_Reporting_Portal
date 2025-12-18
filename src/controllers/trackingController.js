@@ -7,7 +7,12 @@ export class TrackingController {
     try {
       const result = await trackingService.trackClick(request.query, request);
       
-      // Redirect to offer URL
+      // If HTML error page is returned (offer invalid), return HTML instead of redirecting
+      if (result.html) {
+        return reply.type('text/html').code(200).send(result.html);
+      }
+      
+      // Redirect to offer URL if valid
       return reply.redirect(302, result.redirect);
     } catch (error) {
       logger.error('TrackingController.handleClick error:', error);

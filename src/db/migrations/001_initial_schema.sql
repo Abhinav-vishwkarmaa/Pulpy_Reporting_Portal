@@ -1,4 +1,5 @@
--- BNG MIS Reporting Portal - Initial Database Schema (MySQL/MariaDB)
+-- BNG MIS Reporting Portal - Final Database Schema (MySQL/MariaDB)
+-- This schema includes all migrations applied (001-007)
 SET NAMES utf8mb4;
 SET time_zone = '+00:00';
 
@@ -51,7 +52,8 @@ CREATE TABLE IF NOT EXISTS offers (
   name VARCHAR(150) NOT NULL,
   description TEXT,
   category VARCHAR(100),
-  status ENUM('live','paused','draft') DEFAULT 'draft',
+  status VARCHAR(20) DEFAULT 'draft' COMMENT 'Offer status: live, paused, or draft',
+  offer_visibility VARCHAR(50) NULL DEFAULT NULL COMMENT 'Offer visibility setting: public, private, restricted, etc.',
 
   offer_currency VARCHAR(10) NOT NULL,
   country VARCHAR(100) NOT NULL,
@@ -74,18 +76,26 @@ CREATE TABLE IF NOT EXISTS offers (
   ip_action VARCHAR(20),
   ip_list TEXT,
   device_targeting_json JSON,
+  device_action VARCHAR(20) NULL DEFAULT NULL COMMENT 'Device targeting action: ALLOW or BLOCK',
   os_targeting_json JSON,
+  os_action VARCHAR(20) NULL DEFAULT NULL COMMENT 'OS targeting action: ALLOW or BLOCK',
   browser_targeting_json JSON,
+  browser_action VARCHAR(20) NULL DEFAULT NULL COMMENT 'Browser targeting action: ALLOW or BLOCK',
   isp_targeting_json JSON,
   carrier_targeting_json JSON,
   city_targeting_json JSON,
 
-  capping_type ENUM('none','daily','monthly','weekly') DEFAULT 'none',
+  capping_type VARCHAR(20) DEFAULT 'none' COMMENT 'Capping type: none, daily, weekly, or monthly',
   daily_cap INT,
   monthly_cap INT,
   total_cap INT,
   conversion_cap INT,
+  capping_conversions_duration VARCHAR(20) NULL DEFAULT NULL COMMENT 'Conversion capping duration: daily, weekly, or monthly',
   budget_cap DECIMAL(10,2),
+  advertiser_capping_budget_duration VARCHAR(20) NULL DEFAULT NULL COMMENT 'Advertiser budget capping duration: daily, weekly, or monthly',
+  advertiser_capping_budget_amount DECIMAL(10,2) NULL DEFAULT NULL COMMENT 'Advertiser budget capping amount',
+  advertiser_over_capping VARCHAR(50) NULL DEFAULT NULL COMMENT 'Advertiser over-capping action: pause, fallback, reject, etc.',
+  affiliate_over_capping VARCHAR(50) NULL DEFAULT NULL COMMENT 'Affiliate over-capping action: pause, fallback, reject, etc.',
   cap_action VARCHAR(50),
 
   fallback_enabled TINYINT(1) DEFAULT 0,
@@ -102,7 +112,9 @@ CREATE TABLE IF NOT EXISTS offers (
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
 
-  CONSTRAINT fk_offers_advertiser FOREIGN KEY (advertiser_id) REFERENCES advertisers(id)
+  CONSTRAINT fk_offers_advertiser FOREIGN KEY (advertiser_id) REFERENCES advertisers(id),
+  KEY idx_offers_visibility (offer_visibility),
+  KEY idx_offers_advertiser_capping (advertiser_capping_budget_duration, advertiser_capping_budget_amount)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- 5. Publisher Offers (Assignments)
@@ -118,9 +130,10 @@ CREATE TABLE IF NOT EXISTS publisher_offers (
   capping_conversions_duration VARCHAR(20) NULL DEFAULT NULL,
   capping_conversions_amount INT NULL DEFAULT NULL,
   callback_url TEXT NULL DEFAULT NULL,
-  offer_url TEXT NULL DEFAULT NULL,
+  destination_url TEXT NULL DEFAULT NULL,
   status ENUM('active','inactive','suspended') DEFAULT 'active',
   assigned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   notes TEXT,
   UNIQUE KEY uniq_publisher_offer (publisher_id, offer_id),
   CONSTRAINT fk_po_publisher FOREIGN KEY (publisher_id) REFERENCES publishers(id) ON DELETE CASCADE,
@@ -214,7 +227,7 @@ CREATE TABLE IF NOT EXISTS conversions (
   CONSTRAINT fk_conv_po FOREIGN KEY (publisher_offer_id) REFERENCES publisher_offers(id) ON DELETE SET NULL,
   KEY idx_conversions_status (status),
   KEY idx_conversions_timestamp (timestamp),
-  KEY idx_conversions_click_uuid (click_uuid)
+  UNIQUE KEY uniq_click_uuid (click_uuid)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- 9. Daily Offer Stats

@@ -17,6 +17,117 @@ const toJsonOrNull = (val) =>
   val === undefined || val === null ? null : JSON.stringify(val);
 
 class OfferService {
+  /**
+   * Check if offer is valid for operations (clicks, conversions, etc.)
+   * @param {Object} offer - Offer object from database
+   * @returns {Object} - { valid: boolean, message: string, error_type: string }
+   */
+  checkOfferValidity(offer) {
+    if (!offer) {
+      return {
+        valid: false,
+        message: 'Offer not found',
+        error_type: 'offer_not_found'
+      };
+    }
+
+    // Check offer status
+    if (offer.status !== 'live') {
+      return {
+        valid: false,
+        message: `Offer is not live. Current status: ${offer.status}. Only live offers can accept traffic.`,
+        error_type: 'offer_not_live'
+      };
+    }
+
+    const now = new Date();
+
+    // Check if offer has expired (end_date passed)
+    if (offer.end_date) {
+      const endDate = new Date(offer.end_date);
+      endDate.setHours(23, 59, 59, 999); // End of day
+      
+      if (now > endDate) {
+        return {
+          valid: false,
+          message: `Offer has expired. End date: ${offer.end_date}. The offer is no longer accepting traffic.`,
+          error_type: 'offer_expired'
+        };
+      }
+    }
+
+    // Check if offer hasn't started yet (start_date in future)
+    if (offer.start_date) {
+      const startDate = new Date(offer.start_date);
+      startDate.setHours(0, 0, 0, 0); // Start of day
+      
+      if (now < startDate) {
+        return {
+          valid: false,
+          message: `Offer has not started yet. Start date: ${offer.start_date}. The offer will become active on this date.`,
+          error_type: 'offer_not_started'
+        };
+      }
+    }
+
+    return {
+      valid: true,
+      message: 'Offer is valid and active',
+      error_type: null
+    };
+  }
+
+  /**
+   * Validate offer dates and status for create/update operations
+   * @param {Object} offerData - Offer data to validate
+   * @param {Object} existingOffer - Existing offer (for updates)
+   * @returns {Object} - { valid: boolean, message: string, error_type: string }
+   */
+  validateOfferDatesAndStatus(offerData, existingOffer = null) {
+    const now = new Date();
+
+    // Check if offer has expired (end_date passed)
+    const endDate = offerData.end_date || (existingOffer ? existingOffer.end_date : null);
+    if (endDate) {
+      const endDateObj = new Date(endDate);
+      endDateObj.setHours(23, 59, 59, 999); // End of day
+      
+      if (now > endDateObj) {
+        return {
+          valid: false,
+          message: `Offer has expired. End date (${endDate}) has already passed. Cannot create or update expired offers.`,
+          error_type: 'offer_expired'
+        };
+      }
+    }
+
+    // Check if status is being set to 'live' but offer has expired
+    const status = offerData.status || (existingOffer ? existingOffer.status : null);
+    if (status === 'live' && endDate) {
+      const endDateObj = new Date(endDate);
+      endDateObj.setHours(23, 59, 59, 999);
+      
+      if (now > endDateObj) {
+        return {
+          valid: false,
+          message: `Cannot set offer status to 'live': Offer has expired. End date (${endDate}) has already passed.`,
+          error_type: 'offer_expired'
+        };
+      }
+    }
+
+    // Check if trying to set status to 'live' but offer is not live
+    if (status && status !== 'live' && existingOffer && existingOffer.status !== 'live') {
+      // This is just informational, not blocking
+    }
+
+    return {
+      valid: true,
+      message: 'Offer validation passed',
+      error_type: null
+    };
+  }
+
   async createOffer(data) {
     try {
       // Validate advertiser exists
@@ -27,6 +138,14 @@ class OfferService {
           err.statusCode = 400;
           throw err;
         }
+      }
+
+      // Validate offer dates and status
+      const validation = this.validateOfferDatesAndStatus(data);
+      if (!validation.valid) {
+        const err = new Error(validation.message);
+        err.statusCode = 400;
+        throw err;
       }
 
       const sql = `
@@ -142,6 +261,22 @@ class OfferService {
           err.statusCode = 400;
           throw err;
         }
+      }
+
+      // Get existing offer for validation
+      const existingOffer = await this.getOfferById(id);
+      if (!existingOffer) {
+        const err = new Error('Offer not found');
+        err.statusCode = 404;
+        throw err;
+      }
+
+      // Validate offer dates and status
+      const validation = this.validateOfferDatesAndStatus(data, existingOffer);
+      if (!validation.valid) {
+        const err = new Error(validation.message);
+        err.statusCode = 400;
+        throw err;
       }
 
       const fields = [];
@@ -502,6 +637,24 @@ class OfferService {
 
   async changeStatus(id, status) {
     try {
+      // Get existing offer for validation
+      const existingOffer = await this.getOfferById(id);
+      if (!existingOffer) {
+        const err = new Error('Offer not found');
+        err.statusCode = 404;
+        throw err;
+      }
+
+      // Validate if trying to set status to 'live' but offer has expired
+      if (status === 'live') {
+        const validation = this.validateOfferDatesAndStatus({ status: 'live' }, existingOffer);
+        if (!validation.valid) {
+          const err = new Error(validation.message);
+          err.statusCode = 400;
+          throw err;
+        }
+      }
+
       const [result] = await pool.query(
         'UPDATE offers SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
         [status, id]

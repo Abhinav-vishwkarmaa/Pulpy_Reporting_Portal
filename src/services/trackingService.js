@@ -5,6 +5,7 @@ import { extractIP } from '../utils/ipExtractor.js';
 import { parseDevice } from '../utils/deviceParser.js';
 import { getCountryFromHeaders } from '../utils/countryLookup.js';
 import { extractDomain, appendClickParams, replaceMacros } from '../utils/urlGenerator.js';
+import { generateOfferErrorPage } from '../utils/errorPage.js';
 import offerService from './offerService.js';
 import publisherService from './publisherService.js';
 import assignmentService from './assignmentService.js';
@@ -12,8 +13,21 @@ import assignmentService from './assignmentService.js';
 export class TrackingService {
   async trackClick(query, request) {
     try {
-      const offerId = parseInt(query.offer_id);
-      const publisherId = parseInt(query.pub_id);
+      // Support both standard and alternative parameter names
+      // Standard: offer_id, pub_id
+      // Alternative: oid (offer), a (affiliate/publisher)
+      const offerId = parseInt(query.offer_id || query.oid);
+      const publisherId = parseInt(query.pub_id || query.a);
+
+      // Log the parameter mapping for debugging
+      logger.info('Tracking parameters:', {
+        offer_id: query.offer_id,
+        oid: query.oid,
+        pub_id: query.pub_id,
+        a: query.a,
+        resolved_offer_id: offerId,
+        resolved_publisher_id: publisherId
+      });
       
       // Validate offer
       const offer = await offerService.findById(offerId);
@@ -43,13 +57,28 @@ export class TrackingService {
       }
       
       // Apply status and capping checks before recording click
-      const fallbackRedirect = await this.getFallbackRedirect(offer);
+      let fallbackRedirect = await this.getFallbackRedirect(offer);
+      // Provide default fallback if none is configured (prevents redirecting to invalid offer URLs)
+      if (!fallbackRedirect) {
+        fallbackRedirect = '/error?message=offer_unavailable'; // Default error page
+        logger.warn('No fallback URL configured for offer, using default:', { offer_id: offerId });
+      }
 
-      // Step 1: offer must be live
-      if (offer.status !== 'live') {
+      // Step 1: Validate offer is live and not expired
+      const offerValidation = offerService.checkOfferValidity(offer);
+      if (!offerValidation.valid) {
+        logger.warn('Click rejected - Offer validation failed:', {
+          offer_id: offerId,
+          publisher_id: publisherId,
+          reason: offerValidation.message,
+          error_type: offerValidation.error_type
+        });
+        // Return HTML error page instead of redirecting
         return {
-          redirect: fallbackRedirect,
+          html: generateOfferErrorPage(offerValidation.message, offerValidation.error_type),
           clickId: null,
+          error: offerValidation.message,
+          error_type: offerValidation.error_type
         };
       }
 
@@ -135,6 +164,26 @@ export class TrackingService {
       const [clickRows] = await pool.query('SELECT id, click_uuid FROM clicks WHERE id = ?', [clickId]);
       const click = Array.isArray(clickRows) ? clickRows[0] : clickRows;
       
+      // Re-validate offer before determining redirect URL
+      // Never use offer.offer_url if offer is expired or not live
+      const offerValidationCheck = offerService.checkOfferValidity(offer);
+      if (!offerValidationCheck.valid) {
+        logger.warn('Click redirect blocked - Offer validation failed before URL determination:', {
+          offer_id: offerId,
+          publisher_id: publisherId,
+          reason: offerValidationCheck.message,
+          error_type: offerValidationCheck.error_type
+        });
+        // Return HTML error page instead of redirecting
+        return {
+          html: generateOfferErrorPage(offerValidationCheck.message, offerValidationCheck.error_type),
+          clickId: click.click_uuid,
+          error: offerValidationCheck.message,
+          error_type: offerValidationCheck.error_type
+        };
+      }
+      
+      // Only use offer URLs if offer is valid
       // Determine redirect URL using priority: assignment.destination_url OR offer.offer_url
       // assignment.destination_url is an override, offer.offer_url is the default
       let redirectUrl = assignment.destination_url || offer.offer_url;
@@ -164,6 +213,25 @@ export class TrackingService {
         google_id: query.google_id || null,
         android_id: query.android_id || null,
       });
+      
+      // Final validation check: Ensure offer is still valid before redirecting
+      // This prevents redirecting to expired or non-live offers
+      const finalValidation = offerService.checkOfferValidity(offer);
+      if (!finalValidation.valid) {
+        logger.warn('Click redirect blocked - Offer validation failed at final check:', {
+          offer_id: offerId,
+          publisher_id: publisherId,
+          reason: finalValidation.message,
+          error_type: finalValidation.error_type
+        });
+        // Return HTML error page instead of redirecting
+        return {
+          html: generateOfferErrorPage(finalValidation.message, finalValidation.error_type),
+          clickId: click.click_uuid,
+          error: finalValidation.message,
+          error_type: finalValidation.error_type
+        };
+      }
       
       // Update daily stats
       await this.updateDailyStats(offerId, publisherId, 'click');
@@ -228,13 +296,16 @@ export class TrackingService {
   }
 
   async getFallbackRedirect(offer) {
+    // Never return offer.offer_url as fallback - only return actual fallback URLs
     if (offer.fallback_url) return offer.fallback_url;
     if (offer.fallback_offer_id) {
       const [rows] = await pool.query('SELECT offer_url FROM offers WHERE id = ? LIMIT 1', [offer.fallback_offer_id]);
       const fb = Array.isArray(rows) ? rows[0] : rows;
       if (fb?.offer_url) return fb.offer_url;
     }
-    return offer.offer_url;
+    // If no fallback is available, return null or a default error page
+    // Never use the original offer URL as fallback
+    return null;
   }
   
   async trackImpression(query, request) {

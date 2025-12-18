@@ -8,9 +8,11 @@ Complete backend system for BNG MIS Reporting Portal with admin CRUD, tracking, 
 - **Click Tracking**: Track clicks with full device and location data
 - **Impression Tracking**: Track ad impressions
 - **Postback Processing**: Server-to-server conversion tracking with deduplication
+- **One Click = One Conversion**: Database-enforced rule preventing duplicate conversions from same click
 - **Comprehensive Reporting**: Summary and detailed reports with extensive filtering
 - **Dashboard**: Real-time metrics and statistics
 - **Test Conversion Tool**: Test conversion flow
+- **Database Validation**: Tools to check and clean up constraint violations
 
 ## 📋 Prerequisites
 
@@ -50,6 +52,16 @@ Complete backend system for BNG MIS Reporting Portal with admin CRUD, tracking, 
 4. **Run database migrations**
    ```bash
    npm run migrate
+   ```
+
+   **Optional: Validate database constraints**
+   ```bash
+   npm run validate
+   ```
+
+   **Optional: Clean up duplicate conversions (if needed)**
+   ```bash
+   npm run cleanup
    ```
 
 5. **Start the server**
@@ -163,8 +175,15 @@ curl -X POST http://localhost:3000/api/admin/assignments \
 
 #### 6. Generate Tracking URL
 
+**Standard Format:**
 ```bash
 curl http://localhost:3000/api/admin/assignments/1/tracking-url \
+  -H "Authorization: Basic $(echo -n 'admin@bng.com:admin123' | base64)"
+```
+
+**Alternative Format:**
+```bash
+curl "http://localhost:3000/api/admin/assignments/1/tracking-url?format=alternative" \
   -H "Authorization: Basic $(echo -n 'admin@bng.com:admin123' | base64)"
 ```
 
@@ -173,7 +192,19 @@ Response:
 {
   "success": true,
   "data": {
-    "tracking_url": "http://localhost:3000/click?offer_id=1&pub_id=1&tid={TID}"
+    "tracking_url": "http://localhost:3000/click?offer_id=1&pub_id=1&tid={TID}",
+    "format": "standard"
+  }
+}
+```
+
+**Alternative Format Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "tracking_url": "http://localhost:3000/?oid=o0108&m=ad7877&a=af0064&rcid={replace_it}",
+    "format": "alternative"
   }
 }
 ```
@@ -193,15 +224,22 @@ curl -X POST http://localhost:3000/api/admin/test-conversion \
 
 #### 1. Click Tracking
 
+**Standard Format:**
 ```bash
 curl -L "http://localhost:3000/click?offer_id=1&pub_id=1&tid=test123&rcid=rcid123&source_id=src1"
 ```
 
+**Alternative Format:**
+```bash
+curl -L "http://localhost:3000/?oid=o0108&m=ad7877&a=af0064&rcid=dynamic_rcid&tid=test123"
+```
+
 This will:
-- Validate offer and publisher
+- Validate offer and publisher (supports both `offer_id`/`oid` and `pub_id`/`a` parameters)
 - Check capping
 - Record click with device/location data
 - Redirect to offer URL with click parameters
+- Support macro replacement for `{click_id}` and `{clickid}` in offer URLs
 
 #### 2. Impression Tracking
 
@@ -233,6 +271,38 @@ curl -X POST http://localhost:3000/postback \
 ```
 
 **Note**: Conversions are deduplicated based on `rcid + offer_id` combination.
+
+### URL Formats & Macros
+
+#### Tracking URL Formats
+
+**Standard Format:**
+```
+domain.com/click?offer_id={OFFER_ID}&pub_id={PUBLISHER_ID}&rcid={RCID}&tid={TID}
+```
+
+**Alternative Format:**
+```
+domain.com/?oid={OFFER_ID}&m={MERCHANT_ID}&a={AFFILIATE_ID}&rcid={RCID}
+```
+
+#### Offer URL Macros
+
+The system supports the following macros in offer URLs:
+
+- `{click_id}` or `{clickid}` → Click UUID (36-character)
+- `{rcid}` → Conversion tracking ID
+- `{tid}` → Transaction ID
+
+**Example Offer URL:**
+```
+https://advertiser.com/offer?clickid={click_id}&rcid={rcid}
+```
+
+**After Macro Replacement:**
+```
+https://advertiser.com/offer?clickid=123e4567-e89b-12d3-a456-426614174000&rcid=abc123
+```
 
 ### Reporting APIs
 
@@ -387,6 +457,34 @@ backend/
 - Conversions are deduplicated using `UNIQUE(rcid, offer_id)`
 - Same `rcid` + `offer_id` combination will not create duplicate conversions
 
+## 🎯 One Click = One Conversion Rule
+
+The system enforces a strict "one click = one conversion" business rule:
+
+- **Database Constraint**: Unique constraint on `click_uuid` prevents duplicate conversions from the same click
+- **Error Handling**: Attempting to create multiple conversions from the same click returns:
+  ```json
+  {
+    "success": false,
+    "message": "This click has already generated a conversion. One click can only give one conversion.",
+    "error_type": "duplicate_click_conversion"
+  }
+  ```
+
+### Validation & Cleanup Tools
+
+**Check for constraint violations:**
+```bash
+npm run validate
+```
+
+**Clean up duplicate conversions (use with caution):**
+```bash
+npm run cleanup
+```
+
+**Note**: The cleanup script keeps the oldest conversion for each click and removes duplicates.
+
 ## 🐛 Troubleshooting
 
 ### Database Connection Issues
@@ -410,5 +508,6 @@ ISC
 
 For issues and questions, please contact the development team.
 
-#   P u l p y _ R e p o r t i n g _ P o r t a l  
+#   P u l p y _ R e p o r t i n g _ P o r t a l  
+ 
  

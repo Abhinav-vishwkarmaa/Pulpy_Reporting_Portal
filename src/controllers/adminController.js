@@ -490,9 +490,12 @@ export class AdminController {
   async getTrackingURL(request, reply) {
     try {
       const baseURL = process.env.TRACKING_DOMAIN || process.env.BASE_URL || 'http://localhost:3000';
+      const format = request.query.format || 'standard'; // 'standard' or 'alternative'
+
       const trackingURL = await assignmentService.generateTrackingURL(
         request.params.id,
-        baseURL
+        baseURL,
+        format
       );
       if (!trackingURL) {
         return reply.code(404).send({
@@ -505,6 +508,7 @@ export class AdminController {
         success: true,
         data: {
           tracking_url: trackingURL,
+          format: format,
         },
       });
     } catch (error) {

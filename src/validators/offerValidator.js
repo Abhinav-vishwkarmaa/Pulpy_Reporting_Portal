@@ -7,7 +7,7 @@ export const createOfferSchema = Joi.object({
   affiliate_model_cost: Joi.number().positive().required(),
   start_at: Joi.date().iso().allow(null).optional(),
   end_at: Joi.date().iso().allow(null).optional(),
-  offer_url: Joi.string().uri().required(),
+  offer_url: Joi.string().required(),
   preview_url: Joi.string().allow('', null).custom((value, helpers) => {
     // If empty or null, allow it
     if (!value || value === '') {
@@ -28,7 +28,7 @@ export const createOfferSchema = Joi.object({
     }
   }).optional(),
   capping_per_day: Joi.number().integer().min(0).default(0),
-  fallback_url: Joi.string().uri().allow('', null).optional(),
+  fallback_url: Joi.string().allow('', null).optional(),
   status: Joi.string().valid('pending', 'active', 'deactivate', 'remove').default('pending'),
 });
 
@@ -43,7 +43,7 @@ export const updateOfferSchema = Joi.object({
   affiliate_model_cost: Joi.number().positive().optional(),
   start_at: Joi.date().iso().allow(null).optional(),
   end_at: Joi.date().iso().allow(null).optional(),
-  offer_url: Joi.string().uri().optional(),
+  offer_url: Joi.string().optional(),
   preview_url: Joi.string().allow('', null).custom((value, helpers) => {
     // If empty or null, allow it
     if (!value || value === '') {
@@ -64,7 +64,7 @@ export const updateOfferSchema = Joi.object({
     }
   }).optional(),
   capping_per_day: Joi.number().integer().min(0).optional(),
-  fallback_url: Joi.string().uri().allow('', null).optional(),
+  fallback_url: Joi.string().allow('', null).optional(),
   status: Joi.string().valid('pending', 'active', 'deactivate', 'remove').optional(),
 });
 

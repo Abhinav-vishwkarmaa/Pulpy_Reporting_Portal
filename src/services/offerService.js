@@ -54,6 +54,98 @@ export class OfferService {
     return Array.isArray(rows) ? rows[0] : rows;
   }
 
+  /**
+   * Check if offer is valid for operations (clicks, conversions, etc.)
+   * @param {Object} offer - Offer object from database
+   * @param {boolean} checkTimeRestrictions - Whether to check time restrictions (default: false for clicks, true for conversions)
+   * @returns {Object} - { valid: boolean, message: string, error_type: string }
+   */
+  checkOfferValidity(offer, checkTimeRestrictions = false) {
+    if (!offer) {
+      return {
+        valid: false,
+        message: 'Offer not found',
+        error_type: 'offer_not_found'
+      };
+    }
+
+    // Check offer status
+    if (offer.status !== 'live') {
+      return {
+        valid: false,
+        message: `Offer is not live. Current status: ${offer.status}. Only live offers can accept traffic.`,
+        error_type: 'offer_not_live'
+      };
+    }
+
+    const now = new Date();
+    const currentDate = now.toISOString().split('T')[0]; // YYYY-MM-DD
+    const currentTime = now.toTimeString().split(' ')[0]; // HH:MM:SS
+
+    // Check if offer has expired (end_date passed)
+    if (offer.end_date) {
+      const endDate = new Date(offer.end_date);
+      endDate.setHours(23, 59, 59, 999); // End of day
+      
+      if (now > endDate) {
+        return {
+          valid: false,
+          message: `Offer has expired. End date: ${offer.end_date}. The offer is no longer accepting traffic.`,
+          error_type: 'offer_expired'
+        };
+      }
+    }
+
+    // Check if offer hasn't started yet (start_date in future)
+    if (offer.start_date) {
+      const startDate = new Date(offer.start_date);
+      startDate.setHours(0, 0, 0, 0); // Start of day
+      
+      if (now < startDate) {
+        return {
+          valid: false,
+          message: `Offer has not started yet. Start date: ${offer.start_date}. The offer will become active on this date.`,
+          error_type: 'offer_not_started'
+        };
+      }
+    }
+
+    // Check time restrictions (for conversions)
+    if (checkTimeRestrictions) {
+      if (offer.start_time && offer.end_time) {
+        if (currentTime < offer.start_time || currentTime > offer.end_time) {
+          return {
+            valid: false,
+            message: `Conversion outside allowed time window. Allowed: ${offer.start_time} - ${offer.end_time}, Current: ${currentTime}`,
+            error_type: 'offer_time_restricted'
+          };
+        }
+      } else if (offer.start_time) {
+        if (currentTime < offer.start_time) {
+          return {
+            valid: false,
+            message: `Conversion before allowed start time. Start time: ${offer.start_time}, Current: ${currentTime}`,
+            error_type: 'offer_time_restricted'
+          };
+        }
+      } else if (offer.end_time) {
+        if (currentTime > offer.end_time) {
+          return {
+            valid: false,
+            message: `Conversion after allowed end time. End time: ${offer.end_time}, Current: ${currentTime}`,
+            error_type: 'offer_time_restricted'
+          };
+        }
+      }
+    }
+
+    return {
+      valid: true,
+      message: 'Offer is valid and active',
+      error_type: null
+    };
+  }
+
   async findByIdWithDetails(id) {
     try {
       // Get offer details

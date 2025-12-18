@@ -2,7 +2,7 @@ import pool from '../db/connection.js';
 import logger from '../utils/logger.js';
 import publisherService from './publisherService.js';
 import offerService from './offerService.js';
-import { generateTrackingURL } from '../utils/urlGenerator.js';
+import { generateTrackingURL, generateAlternativeTrackingURL } from '../utils/urlGenerator.js';
 
 export class AssignmentService {
   async create(data) {
@@ -280,12 +280,27 @@ export class AssignmentService {
     return rows.map(row => this.formatAssignment(row));
   }
   
-  async generateTrackingURL(assignmentId, baseURL) {
+  async generateTrackingURL(assignmentId, baseURL, format = 'standard') {
     const assignment = await this.findById(assignmentId);
     if (!assignment) {
       return null;
     }
-    
+
+    if (format === 'alternative') {
+      // Get advertiser ID from offer
+      const offer = await offerService.findById(assignment.offer_id);
+      const advertiserId = offer ? offer.advertiser_id : null;
+
+      return generateAlternativeTrackingURL(
+        baseURL,
+        assignment.offer_id,
+        assignment.publisher_id,
+        advertiserId,
+        { rcid: '{replace_it}' } // Use the format they specified
+      );
+    }
+
+    // Default to standard format
     return generateTrackingURL(
       baseURL,
       assignment.offer_id,
