@@ -2,9 +2,35 @@
  * URL generation utilities
  */
 
+/**
+ * Normalize base URL - remove duplicate protocols and trailing slashes
+ * @param {string} url - URL to normalize
+ * @returns {string} - Normalized URL
+ */
+function normalizeBaseURL(url) {
+  if (!url) return url;
+  
+  let normalized = url.trim();
+  
+  // Remove duplicate protocol prefixes (e.g., http://http:// or https://https://)
+  normalized = normalized.replace(/^(https?:\/\/)+/i, (match) => {
+    // Keep only the first protocol
+    const protocols = match.split('://');
+    return protocols[0] + '://';
+  });
+  
+  // Ensure baseURL doesn't end with a slash
+  normalized = normalized.replace(/\/+$/, '');
+  
+  return normalized;
+}
+
 export function generateTrackingURL(baseURL, offerId, publisherId, params = {}) {
+  // Normalize baseURL to handle duplicate protocols
+  const normalizedBaseURL = normalizeBaseURL(baseURL);
+  
   // Build URL manually to avoid URL-encoding curly braces
-  let url = `${baseURL}/click?offer_id=${offerId}&pub_id=${publisherId}`;
+  let url = `${normalizedBaseURL}/click?offer_id=${offerId}&pub_id=${publisherId}`;
 
   // Add optional parameters
   if (params.tid) url += `&tid=${params.tid}`;
@@ -22,7 +48,10 @@ export function generateTrackingURL(baseURL, offerId, publisherId, params = {}) 
  * Example: domain.com?oid=o0108&m=ad7877&a=af0064&rcid={replace_it}
  */
 export function generateAlternativeTrackingURL(baseURL, offerId, publisherId, advertiserId = null, params = {}) {
-  const url = new URL(baseURL);
+  // Normalize baseURL to handle duplicate protocols
+  const normalizedBaseURL = normalizeBaseURL(baseURL);
+  
+  const url = new URL(normalizedBaseURL);
 
   // Use alternative parameter names
   url.searchParams.set('oid', offerId);      // offer_id
