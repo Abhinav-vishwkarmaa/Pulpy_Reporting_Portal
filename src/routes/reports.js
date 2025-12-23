@@ -6,8 +6,13 @@ async function reportRoutes(fastify, options) {
   // Apply auth middleware to all report routes
   fastify.addHook('onRequest', authenticateAdmin);
   
-  // Dashboard
+  // Dashboard endpoints
   fastify.get('/dashboard', dashboardController.getDashboard);
+  fastify.get('/dashboard/top-offers', dashboardController.getTopOffers);
+  fastify.get('/dashboard/performance', dashboardController.getPerformanceChart);
+  fastify.get('/dashboard/top-affiliates', dashboardController.getTopAffiliates);
+  fastify.get('/dashboard/info-cards', dashboardController.getInfoCards);
+  fastify.get('/dashboard/top-countries', dashboardController.getTopCountries);
   
   // Reports
   fastify.get('/summary', reportController.getSummary);

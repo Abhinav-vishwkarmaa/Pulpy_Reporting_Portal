@@ -1,9 +1,9 @@
 {
   "info": {
     "name": "Pulpy - Complete API Collection",
-    "description": "Complete API collection with all routes including Publishers, Offers, Advertisers, Assignments, Tracking, Postback, and Reporting. Supports both Basic Auth and JWT Bearer tokens.\n\n**Assignment Changes (v2.1.0):**\n- Tracking URLs are now dynamic and generated at runtime (not stored in database)\n- `destination_url` replaces `offer_url` (optional override, defaults to `offer.offer_url`)\n- `callback_url` is optional override (defaults to `publisher.global_postback_url`)\n- URLs must contain `{click_id}` or `{rcid}` macro when provided\n- Use `/assignments/:id/tracking-url` to get dynamic tracking URL for publishers",
+    "description": "Complete API collection with all routes including Publishers, Offers, Advertisers, Assignments, Tracking, Postback, and Reporting. Supports both Basic Auth and JWT Bearer tokens.\n\n**Dashboard API Updates (v2.2.0):**\n- Added 6 new dashboard endpoints for frontend integration\n- Main Dashboard Stats: Returns aggregated KPI data with today, yesterday, and MTD values\n- Top Offers: Returns top offers by conversions\n- Performance Chart: Returns time-series data for clicks and conversions\n- Top Affiliates: Returns top affiliates with conversion counts\n- Info Cards: Returns active offers, pending affiliates, account manager info\n- Top Countries: Returns country-wise statistics for world map visualization\n\n**Assignment Changes (v2.1.0):**\n- Tracking URLs are now dynamic and generated at runtime (not stored in database)\n- `destination_url` replaces `offer_url` (optional override, defaults to `offer.offer_url`)\n- `callback_url` is optional override (defaults to `publisher.global_postback_url`)\n- URLs must contain `{click_id}` or `{rcid}` macro when provided\n- Use `/assignments/:id/tracking-url` to get dynamic tracking URL for publishers",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
-    "version": "2.1.0"
+    "version": "2.2.0"
   },
   "auth": {
     "type": "bearer",
@@ -16,7 +16,7 @@
     ]
   },
   "variable": [
-    { "key": "base_url", "value": "http://localhost:3000", "type": "string" },
+    { "key": "base_url", "value": "http://localhost:5000", "type": "string" },
     { "key": "auth_token", "value": "", "type": "string" },
     { "key": "basic_auth", "value": "Basic YWRtaW5AYm5nLmNvbTphZG1pbjEyMw==", "type": "string", "description": "Base64 encoded admin@bng.com:admin123" }
   ],
@@ -393,17 +393,100 @@
       "name": "Admin - Reports",
       "item": [
         {
-          "name": "Dashboard Stats",
+          "name": "Dashboard - Main Stats",
           "request": {
-            "auth": { "type": "basic", "basic": [{ "key": "username", "value": "admin@bng.com", "type": "string" }, { "key": "password", "value": "admin123", "type": "string" }] },
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{auth_token}}", "type": "string" }] },
             "method": "GET",
-            "url": { "raw": "{{base_url}}/api/admin/reports/dashboard", "host": ["{{base_url}}"], "path": ["api","admin","reports","dashboard"] }
+            "url": { "raw": "{{base_url}}/api/admin/reports/dashboard", "host": ["{{base_url}}"], "path": ["api","admin","reports","dashboard"] },
+            "description": "Returns aggregated statistics for the main dashboard KPI cards including conversions, clicks, impressions, revenue, offers, publishers, and advertisers with today, yesterday, and MTD values."
+          }
+        },
+        {
+          "name": "Dashboard - Top Offers",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{auth_token}}", "type": "string" }] },
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/admin/reports/dashboard/top-offers?limit=5&date_from=2024-01-01&date_to=2024-01-31",
+              "host": ["{{base_url}}"],
+              "path": ["api","admin","reports","dashboard","top-offers"],
+              "query": [
+                { "key": "limit", "value": "5", "description": "Number of top offers to return (default: 5)" },
+                { "key": "date_from", "value": "2024-01-01", "description": "Start date (YYYY-MM-DD, default: today)" },
+                { "key": "date_to", "value": "2024-01-31", "description": "End date (YYYY-MM-DD, default: today)" }
+              ]
+            },
+            "description": "Returns top offers by conversion count. Results sorted by conversions (descending). Only offers with conversions > 0 are returned."
+          }
+        },
+        {
+          "name": "Dashboard - Performance Chart",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{auth_token}}", "type": "string" }] },
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/admin/reports/dashboard/performance?date_from=2024-01-01&date_to=2024-01-31&group_by=day",
+              "host": ["{{base_url}}"],
+              "path": ["api","admin","reports","dashboard","performance"],
+              "query": [
+                { "key": "date_from", "value": "2024-01-01", "description": "Start date (YYYY-MM-DD, default: 30 days ago)" },
+                { "key": "date_to", "value": "2024-01-31", "description": "End date (YYYY-MM-DD, default: today)" },
+                { "key": "group_by", "value": "day", "description": "Grouping: day, week, or month (default: day)" }
+              ]
+            },
+            "description": "Returns time-series data for performance chart (clicks and conversions over time). Supports grouping by day, week, or month."
+          }
+        },
+        {
+          "name": "Dashboard - Top Affiliates",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{auth_token}}", "type": "string" }] },
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/admin/reports/dashboard/top-affiliates?limit=5&date_from=2024-01-01&date_to=2024-01-31",
+              "host": ["{{base_url}}"],
+              "path": ["api","admin","reports","dashboard","top-affiliates"],
+              "query": [
+                { "key": "limit", "value": "5", "description": "Number of top affiliates to return (default: 5)" },
+                { "key": "date_from", "value": "2024-01-01", "description": "Start date (YYYY-MM-DD, default: start of month)" },
+                { "key": "date_to", "value": "2024-01-31", "description": "End date (YYYY-MM-DD, default: today)" }
+              ]
+            },
+            "description": "Returns top affiliates by conversion count. Includes total_conversions for all affiliates (not just top N). Results sorted by conversions (descending)."
+          }
+        },
+        {
+          "name": "Dashboard - Info Cards",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{auth_token}}", "type": "string" }] },
+            "method": "GET",
+            "url": { "raw": "{{base_url}}/api/admin/reports/dashboard/info-cards", "host": ["{{base_url}}"], "path": ["api","admin","reports","dashboard","info-cards"] },
+            "description": "Returns data for information cards: active offers count, offer requests, pending affiliates, account manager contact info, and signup link."
+          }
+        },
+        {
+          "name": "Dashboard - Top Countries",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{auth_token}}", "type": "string" }] },
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/admin/reports/dashboard/top-countries?limit=10&metric=conversions&date_from=2024-01-01&date_to=2024-01-31",
+              "host": ["{{base_url}}"],
+              "path": ["api","admin","reports","dashboard","top-countries"],
+              "query": [
+                { "key": "limit", "value": "10", "description": "Number of top countries to return (default: 10)" },
+                { "key": "metric", "value": "conversions", "description": "Sort by: clicks, conversions, or revenue (default: conversions)" },
+                { "key": "date_from", "value": "2024-01-01", "description": "Start date (YYYY-MM-DD, default: start of month)" },
+                { "key": "date_to", "value": "2024-01-31", "description": "End date (YYYY-MM-DD, default: today)" }
+              ]
+            },
+            "description": "Returns country-wise statistics for world map visualization. Countries sorted by specified metric (descending). Country codes are ISO 3166-1 alpha-2 format."
           }
         },
         {
           "name": "Summary Report",
           "request": {
-            "auth": { "type": "basic", "basic": [{ "key": "username", "value": "admin@bng.com", "type": "string" }, { "key": "password", "value": "admin123", "type": "string" }] },
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{auth_token}}", "type": "string" }] },
             "method": "GET",
             "url": {
               "raw": "{{base_url}}/api/admin/reports/summary?date_from=2024-01-01&date_to=2024-01-31&offer_id=1&publisher_id=1&country=US",
@@ -427,7 +510,7 @@
         {
           "name": "Detailed Report",
           "request": {
-            "auth": { "type": "basic", "basic": [{ "key": "username", "value": "admin@bng.com", "type": "string" }, { "key": "password", "value": "admin123", "type": "string" }] },
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{auth_token}}", "type": "string" }] },
             "method": "GET",
             "url": {
               "raw": "{{base_url}}/api/admin/reports/detailed?date_from=2024-01-01&offer_id=1&page=1&limit=50",
@@ -447,7 +530,7 @@
         {
           "name": "Publisher Conversion Statistics",
           "request": {
-            "auth": { "type": "basic", "basic": [{ "key": "username", "value": "admin@bng.com", "type": "string" }, { "key": "password", "value": "admin123", "type": "string" }] },
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{auth_token}}", "type": "string" }] },
             "method": "GET",
             "url": {
               "raw": "{{base_url}}/api/admin/reports/publisher-conversions?publisher_id=1&offer_id=10&date_from=2024-01-01&date_to=2024-01-31",

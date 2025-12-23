@@ -230,6 +230,33 @@ export class ReportService {
    */
   async getPublisherConversionStats(filters = {}) {
     try {
+      // Build date conditions for WHERE clause
+      let conversionDateCondition = '';
+      const params = [];
+
+      if (filters.date_from) {
+        conversionDateCondition += ' AND created_at >= ?';
+        params.push(filters.date_from);
+      }
+
+      if (filters.date_to) {
+        conversionDateCondition += ' AND created_at <= ?';
+        params.push(filters.date_to);
+      }
+
+      // Build base WHERE conditions
+      let whereConditions = 'WHERE 1=1';
+      if (filters.publisher_id) {
+        whereConditions += ' AND p.id = ?';
+        params.push(filters.publisher_id);
+      }
+
+      if (filters.offer_id) {
+        whereConditions += ' AND o.id = ?';
+        params.push(filters.offer_id);
+      }
+
+      // Use subqueries to calculate clicks and conversions separately to avoid cartesian product
       let query = `
         SELECT 
           p.id as publisher_id,
@@ -239,55 +266,53 @@ export class ReportService {
           o.id as offer_id,
           o.name as offer_name,
           o.category as offer_category,
-          COUNT(DISTINCT c.id) as total_clicks,
-          COUNT(DISTINCT conv.id) as total_conversions,
-          COUNT(DISTINCT CASE WHEN conv.status = 'approved' THEN conv.id END) as approved_conversions,
-          COUNT(DISTINCT CASE WHEN conv.status = 'pending' THEN conv.id END) as pending_conversions,
-          COUNT(DISTINCT CASE WHEN conv.status = 'rejected' THEN conv.id END) as rejected_conversions,
-          COUNT(DISTINCT CASE WHEN conv.status = 'rejected_cap' THEN conv.id END) as rejected_cap_conversions,
-          COALESCE(SUM(conv.amount), 0) as total_revenue,
-          COALESCE(SUM(CASE WHEN conv.status = 'approved' THEN conv.amount ELSE 0 END), 0) as approved_revenue,
-          COALESCE(SUM(conv.payout), 0) as total_payout,
-          COALESCE(SUM(CASE WHEN conv.status = 'approved' THEN conv.payout ELSE 0 END), 0) as approved_payout,
-          COALESCE(SUM(conv.amount - conv.payout), 0) as total_profit,
-          COALESCE(SUM(CASE WHEN conv.status = 'approved' THEN conv.amount - conv.payout ELSE 0 END), 0) as approved_profit
+          COALESCE(click_stats.total_clicks, 0) as total_clicks,
+          COALESCE(conv_stats.total_conversions, 0) as total_conversions,
+          COALESCE(conv_stats.approved_conversions, 0) as approved_conversions,
+          COALESCE(conv_stats.pending_conversions, 0) as pending_conversions,
+          COALESCE(conv_stats.rejected_conversions, 0) as rejected_conversions,
+          COALESCE(conv_stats.rejected_cap_conversions, 0) as rejected_cap_conversions,
+          COALESCE(conv_stats.total_revenue, 0) as total_revenue,
+          COALESCE(conv_stats.approved_revenue, 0) as approved_revenue,
+          COALESCE(conv_stats.total_payout, 0) as total_payout,
+          COALESCE(conv_stats.approved_payout, 0) as approved_payout,
+          COALESCE(conv_stats.total_profit, 0) as total_profit,
+          COALESCE(conv_stats.approved_profit, 0) as approved_profit
         FROM publishers p
         INNER JOIN publisher_offers po ON p.id = po.publisher_id
         INNER JOIN offers o ON po.offer_id = o.id
-        LEFT JOIN clicks c ON c.publisher_id = p.id AND c.offer_id = o.id
-        LEFT JOIN conversions conv ON conv.publisher_id = p.id AND conv.offer_id = o.id
-        WHERE 1=1
-      `;
-
-      const params = [];
-
-      if (filters.publisher_id) {
-        query += ' AND p.id = ?';
-        params.push(filters.publisher_id);
-      }
-
-      if (filters.offer_id) {
-        query += ' AND o.id = ?';
-        params.push(filters.offer_id);
-      }
-
-      if (filters.date_from) {
-        query += ' AND conv.created_at >= ?';
-        params.push(filters.date_from);
-      }
-
-      if (filters.date_to) {
-        query += ' AND conv.created_at <= ?';
-        params.push(filters.date_to);
-      }
-
-      query += `
-        GROUP BY p.id, p.email, p.company_name, p.country, o.id, o.name, o.category
-        ORDER BY total_conversions DESC, approved_conversions DESC
+        LEFT JOIN (
+          SELECT 
+            publisher_id,
+            offer_id,
+            COUNT(DISTINCT id) as total_clicks
+          FROM clicks
+          GROUP BY publisher_id, offer_id
+        ) click_stats ON click_stats.publisher_id = p.id AND click_stats.offer_id = o.id
+        LEFT JOIN (
+          SELECT 
+            publisher_id,
+            offer_id,
+            COUNT(DISTINCT id) as total_conversions,
+            COUNT(DISTINCT CASE WHEN status = 'approved' THEN id END) as approved_conversions,
+            COUNT(DISTINCT CASE WHEN status = 'pending' THEN id END) as pending_conversions,
+            COUNT(DISTINCT CASE WHEN status = 'rejected' THEN id END) as rejected_conversions,
+            COUNT(DISTINCT CASE WHEN status = 'rejected_cap' THEN id END) as rejected_cap_conversions,
+            COALESCE(SUM(amount), 0) as total_revenue,
+            COALESCE(SUM(CASE WHEN status = 'approved' THEN amount ELSE 0 END), 0) as approved_revenue,
+            COALESCE(SUM(payout), 0) as total_payout,
+            COALESCE(SUM(CASE WHEN status = 'approved' THEN payout ELSE 0 END), 0) as approved_payout,
+            COALESCE(SUM(amount - payout), 0) as total_profit,
+            COALESCE(SUM(CASE WHEN status = 'approved' THEN amount - payout ELSE 0 END), 0) as approved_profit
+          FROM conversions
+          WHERE 1=1${conversionDateCondition}
+          GROUP BY publisher_id, offer_id
+        ) conv_stats ON conv_stats.publisher_id = p.id AND conv_stats.offer_id = o.id
+        ${whereConditions}
+        ORDER BY conv_stats.total_conversions DESC, conv_stats.approved_conversions DESC
       `;
 
       const [rows] = await pool.query(query, params);
-
       // Calculate conversion rates
       const stats = rows.map(row => {
         const conversionRate = row.total_clicks > 0
