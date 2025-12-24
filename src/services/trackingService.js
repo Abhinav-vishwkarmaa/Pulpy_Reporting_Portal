@@ -273,7 +273,7 @@ export class TrackingService {
         throw new Error('No destination URL available for redirect');
       }
       
-      // Replace macros in URL ({click_id}, {rcid}, {tid})
+      // Replace macros in URL ({click_id}, {rcid}, {tid}, {REPLACE})
       redirectUrl = replaceMacros(redirectUrl, {
         click_id: click.click_uuid,
         rcid: query.rcid || '',
@@ -289,6 +289,25 @@ export class TrackingService {
         device_id: query.device_id || null,
         google_id: query.google_id || null,
         android_id: query.android_id || null,
+      });
+      
+      // Log final redirect URL with click_id for verification
+      console.log('\n' + '='.repeat(80));
+      console.log('🔗 REDIRECT URL WITH CLICK_ID:');
+      console.log('='.repeat(80));
+      console.log(`Original Offer URL: ${assignment.destination_url || offer.offer_url}`);
+      console.log(`Final Redirect URL: ${redirectUrl}`);
+      console.log(`Click ID: ${click.click_uuid}`);
+      console.log(`Offer ID: ${offerId}`);
+      console.log(`Publisher ID: ${publisherId}`);
+      console.log('='.repeat(80) + '\n');
+      
+      logger.info('Redirect URL generated:', {
+        original_url: assignment.destination_url || offer.offer_url,
+        final_redirect_url: redirectUrl,
+        click_id: click.click_uuid,
+        offer_id: offerId,
+        publisher_id: publisherId
       });
       
       // Final validation check: Ensure offer is still valid before redirecting

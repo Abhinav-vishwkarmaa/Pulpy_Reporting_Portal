@@ -130,7 +130,7 @@ export function extractDomain(referrer) {
 
 /**
  * Replace macros in URLs with actual values
- * Supported macros: {click_id}, {clickid}, {CLICK_ID}, {rcid}, {RCID}, {tid}, {TID}
+ * Supported macros: {click_id}, {clickid}, {CLICK_ID}, {REPLACE}, {replace}, {rcid}, {RCID}, {tid}, {TID}
  */
 export function replaceMacros(url, macroValues = {}) {
   if (!url) return url;
@@ -142,6 +142,8 @@ export function replaceMacros(url, macroValues = {}) {
     result = result.replace(/{click_id}/gi, macroValues.click_id);
     result = result.replace(/{clickid}/gi, macroValues.click_id);  // Support clickid without underscore
     result = result.replace(/{CLICK_ID}/gi, macroValues.click_id);
+    result = result.replace(/{REPLACE}/gi, macroValues.click_id);  // Support {REPLACE} macro
+    result = result.replace(/{replace}/gi, macroValues.click_id);  // Support {replace} (lowercase)
   }
   if (macroValues.rcid) {
     result = result.replace(/{rcid}/gi, macroValues.rcid);
