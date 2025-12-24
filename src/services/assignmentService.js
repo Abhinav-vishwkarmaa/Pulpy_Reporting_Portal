@@ -2,7 +2,7 @@ import pool from '../db/connection.js';
 import logger from '../utils/logger.js';
 import publisherService from './publisherService.js';
 import offerService from './offerService.js';
-import { generateTrackingURL, generateAlternativeTrackingURL } from '../utils/urlGenerator.js';
+import { generateTrackingURL, generateAlternativeTrackingURL, generateClickId } from '../utils/urlGenerator.js';
 
 export class AssignmentService {
   async create(data) {
@@ -301,11 +301,13 @@ export class AssignmentService {
     }
 
     // Default to standard format
+    // Note: click_id is NOT included in tracking URL - it will be generated dynamically on each click
+    // This ensures each click gets a fresh, unique click_id
     return generateTrackingURL(
       baseURL,
       assignment.offer_id,
       assignment.publisher_id,
-      { tid: '{TID}' }
+      {}  // No parameters - click_id will be generated dynamically when URL is clicked
     );
   }
   

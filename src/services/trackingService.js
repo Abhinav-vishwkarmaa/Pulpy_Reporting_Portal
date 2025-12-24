@@ -4,7 +4,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { extractIP } from '../utils/ipExtractor.js';
 import { parseDevice } from '../utils/deviceParser.js';
 import { getCountryFromHeaders } from '../utils/countryLookup.js';
-import { extractDomain, appendClickParams, replaceMacros } from '../utils/urlGenerator.js';
+import { extractDomain, appendClickParams, replaceMacros, generateClickId } from '../utils/urlGenerator.js';
 import { generateOfferErrorPage } from '../utils/errorPage.js';
 import offerService from './offerService.js';
 import publisherService from './publisherService.js';
@@ -122,8 +122,79 @@ export class TrackingService {
       const referrer = request.headers.referer || request.headers.referrer || null;
       const domain = extractDomain(referrer);
       
-      // Insert click
-      const clickUuid = uuidv4();
+      // ============================================
+      // CRITICAL: Generate click_id BEFORE database insert and redirect
+      // ============================================
+      // This ensures:
+      // 1. We have a unique identifier before any external redirect
+      // 2. The same click_id can be passed to downstream affiliates
+      // 3. We maintain control over click tracking (not dependent on downstream)
+      // 4. We can track the full click journey across multiple redirects
+      // ============================================
+      
+      // Use provided click_id from URL (if present) or generate a new one
+      // This allows pre-generated tracking URLs to work correctly
+      let clickUuid = query.click_id || null;
+      
+      if (!clickUuid) {
+        // Generate a production-grade URL-safe click_id (36 chars to match database CHAR(36))
+        clickUuid = generateClickId(36);
+        logger.info('Generated new click_id:', { click_id: clickUuid, offer_id: offerId, publisher_id: publisherId });
+      } else {
+        // Validate that provided click_id doesn't already exist (prevent duplicates)
+        const [existingClick] = await pool.query(
+          'SELECT id, click_uuid FROM clicks WHERE click_uuid = ? LIMIT 1',
+          [clickUuid]
+        );
+        
+        if (existingClick && existingClick.length > 0) {
+          logger.warn('Click ID already exists, using existing click record:', { 
+            click_id: clickUuid,
+            existing_id: existingClick[0].id 
+          });
+          // Use existing click record - don't create duplicate
+          const existingClickRecord = existingClick[0];
+          const [existingClickRows] = await pool.query(
+            'SELECT id, click_uuid FROM clicks WHERE id = ?',
+            [existingClickRecord.id]
+          );
+          const existingClickData = Array.isArray(existingClickRows) ? existingClickRows[0] : existingClickRows;
+          
+          // Still need to redirect, so continue with existing click
+          clickUuid = existingClickData.click_uuid;
+          
+          // Get redirect URL and return (skip insert)
+          let redirectUrl = assignment.destination_url || offer.offer_url;
+          if (offer.status === 'deactivate') {
+            redirectUrl = offer.fallback_url || redirectUrl;
+          }
+          
+          redirectUrl = replaceMacros(redirectUrl, {
+            click_id: clickUuid,
+            rcid: query.rcid || '',
+            tid: query.tid || '',
+          });
+          
+          redirectUrl = appendClickParams(redirectUrl, {
+            click_id: clickUuid,
+            tid: query.tid || null,
+            rcid: query.rcid || null,
+            source_id: query.source_id || null,
+            device_id: query.device_id || null,
+            google_id: query.google_id || null,
+            android_id: query.android_id || null,
+          });
+          
+          return {
+            redirect: redirectUrl,
+            clickId: clickUuid,
+          };
+        } else {
+          logger.info('Using provided click_id from URL:', { click_id: clickUuid });
+        }
+      }
+      
+      // Insert click with pre-generated click_id
       const [clickResult] = await pool.query(
         `INSERT INTO clicks (
           click_uuid, offer_id, publisher_id, publisher_offer_id,

@@ -2,6 +2,46 @@
  * URL generation utilities
  */
 
+import crypto from 'crypto';
+
+/**
+ * Generate a unique, URL-safe click_id (max 36 characters to match database CHAR(36))
+ * Uses cryptographically secure random bytes for production-grade security
+ * Format: Base64URL encoded random bytes (URL-safe, no padding)
+ * 
+ * @param {number} length - Desired length (default: 36, max: 36 to match database schema)
+ * @returns {string} - URL-safe click_id
+ * 
+ * Example output: "2092Y7avpRzmwWRY7aFjF2bS53VM4jjYK5f"
+ */
+export function generateClickId(length = 36) {
+  // Database column is CHAR(36), so limit to 36 characters
+  const validLength = Math.min(36, length || 36);
+  
+  // Generate cryptographically secure random bytes
+  // We need (length * 3/4) bytes to get approximately 'length' characters after base64 encoding
+  const bytesNeeded = Math.ceil(validLength * 0.75);
+  const randomBytes = crypto.randomBytes(bytesNeeded);
+  
+  // Convert to Base64URL (URL-safe, no padding)
+  // Base64URL uses - and _ instead of + and /, and removes = padding
+  let clickId = randomBytes.toString('base64url');
+  
+  // Trim to exact length (36 chars max to match database CHAR(36))
+  if (clickId.length > validLength) {
+    clickId = clickId.substring(0, validLength);
+  }
+  
+  // Ensure minimum length by padding if necessary
+  while (clickId.length < validLength) {
+    const additionalBytes = crypto.randomBytes(8);
+    clickId += additionalBytes.toString('base64url');
+  }
+  
+  // Final trim to ensure we don't exceed 36 characters (database limit)
+  return clickId.substring(0, 36);
+}
+
 /**
  * Normalize base URL - remove duplicate protocols and trailing slashes
  * @param {string} url - URL to normalize
@@ -32,9 +72,11 @@ export function generateTrackingURL(baseURL, offerId, publisherId, params = {}) 
   // Build URL manually to avoid URL-encoding curly braces
   let url = `${normalizedBaseURL}/click?offer_id=${offerId}&pub_id=${publisherId}`;
 
-  // Add optional parameters
+  // Note: click_id is NOT included here - it will be generated dynamically on each click
+  // Note: rcid is NOT included - removed as per requirements
+  
+  // Add optional parameters (excluding rcid)
   if (params.tid) url += `&tid=${params.tid}`;
-  if (params.rcid) url += `&rcid=${params.rcid}`;
   if (params.source_id) url += `&source_id=${params.source_id}`;
   if (params.device_id) url += `&device_id=${params.device_id}`;
   if (params.google_id) url += `&google_id=${params.google_id}`;
