@@ -10,11 +10,22 @@ export class PostbackController {
       
       const result = await postbackService.processPostback(params, request);
       
+      // Transform conversion data: rename click_uuid to click_id for API response
+      let conversionData = result.conversion || null;
+      if (conversionData) {
+        // Create new object with click_id instead of click_uuid
+        const { click_uuid, ...rest } = conversionData;
+        conversionData = {
+          ...rest,
+          click_id: click_uuid || null,  // Rename click_uuid to click_id
+        };
+      }
+      
       return reply.send({
         success: result.success,
         message: result.message,
         duplicate: result.duplicate || false,
-        data: result.conversion || null,
+        data: conversionData,
         timestamp: new Date().toISOString(),
       });
     } catch (error) {
