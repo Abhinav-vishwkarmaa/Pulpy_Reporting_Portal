@@ -133,10 +133,16 @@ export class TrackingService {
       // ============================================
       
       // Use provided click_id from URL (if present) or generate a new one
-      // This allows pre-generated tracking URLs to work correctly
+      // This allows publishers to send their own click_id, or system generates one
       let clickUuid = query.click_id || null;
       
-      if (!clickUuid) {
+      // Check if click_id is a placeholder (like {click_id}) - if so, generate new one
+      if (clickUuid && (clickUuid.includes('{') || clickUuid.includes('}'))) {
+        logger.info('Click_id is a placeholder, generating new one:', { placeholder: clickUuid });
+        clickUuid = null; // Treat placeholder as no click_id
+      }
+      
+      if (!clickUuid || clickUuid.trim() === '') {
         // Generate a production-grade URL-safe click_id (36 chars to match database CHAR(36))
         clickUuid = generateClickId(36);
         logger.info('Generated new click_id:', { click_id: clickUuid, offer_id: offerId, publisher_id: publisherId });

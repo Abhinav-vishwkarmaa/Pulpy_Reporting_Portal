@@ -72,7 +72,16 @@ export function generateTrackingURL(baseURL, offerId, publisherId, params = {}) 
   // Build URL manually to avoid URL-encoding curly braces
   let url = `${normalizedBaseURL}/click?offer_id=${offerId}&pub_id=${publisherId}`;
 
-  // Note: click_id is NOT included here - it will be generated dynamically on each click
+  // Add click_id if provided (can be placeholder like {click_id} or actual value)
+  if (params.click_id) {
+    // Don't encode if it's a placeholder (contains curly braces)
+    if (params.click_id.includes('{') || params.click_id.includes('}')) {
+      url += `&click_id=${params.click_id}`;
+    } else {
+      url += `&click_id=${encodeURIComponent(params.click_id)}`;
+    }
+  }
+  
   // Note: rcid is NOT included - removed as per requirements
   
   // Add optional parameters (excluding rcid)

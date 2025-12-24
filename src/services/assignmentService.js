@@ -301,13 +301,13 @@ export class AssignmentService {
     }
 
     // Default to standard format
-    // Note: click_id is NOT included in tracking URL - it will be generated dynamically on each click
-    // This ensures each click gets a fresh, unique click_id
+    // Include click_id as placeholder {click_id} in tracking URL
+    // Publisher can replace it with their own click_id, or system will generate one dynamically
     return generateTrackingURL(
       baseURL,
       assignment.offer_id,
       assignment.publisher_id,
-      {}  // No parameters - click_id will be generated dynamically when URL is clicked
+      { click_id: '{click_id}' }  // Placeholder - will be replaced by publisher or generated dynamically
     );
   }
   
