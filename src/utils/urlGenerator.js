@@ -17,27 +17,27 @@ import crypto from 'crypto';
 export function generateClickId(length = 36) {
   // Database column is CHAR(36), so limit to 36 characters
   const validLength = Math.min(36, length || 36);
-  
+
   // Generate cryptographically secure random bytes
   // We need (length * 3/4) bytes to get approximately 'length' characters after base64 encoding
   const bytesNeeded = Math.ceil(validLength * 0.75);
   const randomBytes = crypto.randomBytes(bytesNeeded);
-  
+
   // Convert to Base64URL (URL-safe, no padding)
   // Base64URL uses - and _ instead of + and /, and removes = padding
   let clickId = randomBytes.toString('base64url');
-  
+
   // Trim to exact length (36 chars max to match database CHAR(36))
   if (clickId.length > validLength) {
     clickId = clickId.substring(0, validLength);
   }
-  
+
   // Ensure minimum length by padding if necessary
   while (clickId.length < validLength) {
     const additionalBytes = crypto.randomBytes(8);
     clickId += additionalBytes.toString('base64url');
   }
-  
+
   // Final trim to ensure we don't exceed 36 characters (database limit)
   return clickId.substring(0, 36);
 }
@@ -49,26 +49,26 @@ export function generateClickId(length = 36) {
  */
 function normalizeBaseURL(url) {
   if (!url) return url;
-  
+
   let normalized = url.trim();
-  
+
   // Remove duplicate protocol prefixes (e.g., http://http:// or https://https://)
   normalized = normalized.replace(/^(https?:\/\/)+/i, (match) => {
     // Keep only the first protocol
     const protocols = match.split('://');
     return protocols[0] + '://';
   });
-  
+
   // Ensure baseURL doesn't end with a slash
   normalized = normalized.replace(/\/+$/, '');
-  
+
   return normalized;
 }
 
 export function generateTrackingURL(baseURL, offerId, publisherId, params = {}) {
   // Normalize baseURL to handle duplicate protocols
   const normalizedBaseURL = normalizeBaseURL(baseURL);
-  
+
   // Build URL manually to avoid URL-encoding curly braces
   let url = `${normalizedBaseURL}/click?offer_id=${offerId}&pub_id=${publisherId}`;
 
@@ -81,9 +81,9 @@ export function generateTrackingURL(baseURL, offerId, publisherId, params = {}) 
       url += `&click_id=${encodeURIComponent(params.click_id)}`;
     }
   }
-  
+
   // Note: rcid is NOT included - removed as per requirements
-  
+
   // Add optional parameters (excluding rcid)
   if (params.tid) url += `&tid=${params.tid}`;
   if (params.source_id) url += `&source_id=${params.source_id}`;
@@ -101,7 +101,7 @@ export function generateTrackingURL(baseURL, offerId, publisherId, params = {}) 
 export function generateAlternativeTrackingURL(baseURL, offerId, publisherId, advertiserId = null, params = {}) {
   // Normalize baseURL to handle duplicate protocols
   const normalizedBaseURL = normalizeBaseURL(baseURL);
-  
+
   const url = new URL(normalizedBaseURL);
 
   // Use alternative parameter names
@@ -119,7 +119,7 @@ export function generateAlternativeTrackingURL(baseURL, offerId, publisherId, ad
 
 export function extractDomain(referrer) {
   if (!referrer) return null;
-  
+
   try {
     const url = new URL(referrer);
     return url.hostname;
@@ -144,6 +144,10 @@ export function replaceMacros(url, macroValues = {}) {
     result = result.replace(/{CLICK_ID}/gi, macroValues.click_id);
     result = result.replace(/{REPLACE}/gi, macroValues.click_id);  // Support {REPLACE} macro
     result = result.replace(/{replace}/gi, macroValues.click_id);  // Support {replace} (lowercase)
+    // Support angle brackets format
+    result = result.replace(/<click_id>/gi, macroValues.click_id);
+    result = result.replace(/<clickid>/gi, macroValues.click_id);
+    result = result.replace(/<CLICK_ID>/gi, macroValues.click_id);
   }
   if (macroValues.rcid) {
     result = result.replace(/{rcid}/gi, macroValues.rcid);
@@ -160,7 +164,7 @@ export function replaceMacros(url, macroValues = {}) {
 export function appendClickParams(offerUrl, clickData) {
   // Helper to check if value contains macros (curly braces) - these shouldn't be URL-encoded
   const hasMacros = (value) => value && typeof value === 'string' && (value.includes('{') || value.includes('}'));
-  
+
   // Helper to check if value is only a macro placeholder (like {TID}, {RCID}) - skip these
   const isOnlyMacro = (value) => value && typeof value === 'string' && /^\{[A-Z_]+\}$/i.test(value.trim());
 
@@ -229,16 +233,16 @@ export function appendClickParams(offerUrl, clickData) {
   } catch (e) {
     // If offerUrl is not a valid URL, check manually for existing parameters
     const isOnlyMacro = (value) => value && typeof value === 'string' && /^\{[A-Z_]+\}$/i.test(value.trim());
-    
+
     // Check if parameters already exist in the URL string
     const urlLower = offerUrl.toLowerCase();
     const hasClickId = urlLower.includes('click_id=') || urlLower.includes('clickid=');
     const hasTid = urlLower.includes('tid=');
     const hasRcid = urlLower.includes('rcid=');
-    
+
     const separator = offerUrl.includes('?') ? '&' : '?';
     const params = [];
-    
+
     if (clickData.click_id && !hasClickId) {
       params.push(`click_id=${clickData.click_id}`);
     }
@@ -248,11 +252,11 @@ export function appendClickParams(offerUrl, clickData) {
     if (clickData.rcid && !isOnlyMacro(clickData.rcid) && !hasRcid) {
       params.push(`rcid=${clickData.rcid}`);
     }
-    
+
     if (params.length === 0) {
       return offerUrl;
     }
-    
+
     return `${offerUrl}${separator}${params.join('&')}`;
   }
 }

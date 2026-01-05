@@ -12,13 +12,13 @@ export class PostbackController {
       
       // Transform conversion data: rename click_uuid to click_id for API response
       let conversionData = result.conversion || null;
-      if (conversionData) {
-        // Create new object with click_id instead of click_uuid
-        const { click_uuid, ...rest } = conversionData;
+      if (conversionData && conversionData.click_uuid) {
         conversionData = {
-          ...rest,
-          click_id: click_uuid || null,  // Rename click_uuid to click_id
+          ...conversionData,
+          click_id: conversionData.click_uuid,
         };
+        // Remove click_uuid from response (keep only click_id)
+        delete conversionData.click_uuid;
       }
       
       return reply.send({

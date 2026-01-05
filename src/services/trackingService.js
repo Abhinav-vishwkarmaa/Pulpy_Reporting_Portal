@@ -133,16 +133,10 @@ export class TrackingService {
       // ============================================
       
       // Use provided click_id from URL (if present) or generate a new one
-      // This allows publishers to send their own click_id, or system generates one
+      // This allows pre-generated tracking URLs to work correctly
       let clickUuid = query.click_id || null;
       
-      // Check if click_id is a placeholder (like {click_id}) - if so, generate new one
-      if (clickUuid && (clickUuid.includes('{') || clickUuid.includes('}'))) {
-        logger.info('Click_id is a placeholder, generating new one:', { placeholder: clickUuid });
-        clickUuid = null; // Treat placeholder as no click_id
-      }
-      
-      if (!clickUuid || clickUuid.trim() === '') {
+      if (!clickUuid) {
         // Generate a production-grade URL-safe click_id (36 chars to match database CHAR(36))
         clickUuid = generateClickId(36);
         logger.info('Generated new click_id:', { click_id: clickUuid, offer_id: offerId, publisher_id: publisherId });
@@ -273,7 +267,7 @@ export class TrackingService {
         throw new Error('No destination URL available for redirect');
       }
       
-      // Replace macros in URL ({click_id}, {rcid}, {tid}, {REPLACE})
+      // Replace macros in URL ({click_id}, {rcid}, {tid})
       redirectUrl = replaceMacros(redirectUrl, {
         click_id: click.click_uuid,
         rcid: query.rcid || '',
@@ -289,25 +283,6 @@ export class TrackingService {
         device_id: query.device_id || null,
         google_id: query.google_id || null,
         android_id: query.android_id || null,
-      });
-      
-      // Log final redirect URL with click_id for verification
-      console.log('\n' + '='.repeat(80));
-      console.log('🔗 REDIRECT URL WITH CLICK_ID:');
-      console.log('='.repeat(80));
-      console.log(`Original Offer URL: ${assignment.destination_url || offer.offer_url}`);
-      console.log(`Final Redirect URL: ${redirectUrl}`);
-      console.log(`Click ID: ${click.click_uuid}`);
-      console.log(`Offer ID: ${offerId}`);
-      console.log(`Publisher ID: ${publisherId}`);
-      console.log('='.repeat(80) + '\n');
-      
-      logger.info('Redirect URL generated:', {
-        original_url: assignment.destination_url || offer.offer_url,
-        final_redirect_url: redirectUrl,
-        click_id: click.click_uuid,
-        offer_id: offerId,
-        publisher_id: publisherId
       });
       
       // Final validation check: Ensure offer is still valid before redirecting

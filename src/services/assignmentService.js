@@ -159,7 +159,7 @@ export class AssignmentService {
     // Do NOT generate tracking URLs - they are dynamic and generated at runtime
     const destinationUrl = data.destination_url || data.offer_url || null; // Support legacy field name
     const callbackUrl = data.callback_url || null; // Store only if explicitly provided (override)
-    
+    //https://url.promotrking.com/landing/subscribe?partner=Pulp&service=MadFunny-or&clickId=<CLICK_ID>
     await pool.query(
       `INSERT INTO publisher_offers (
         publisher_id, offer_id, payout_override, cap_override, 
@@ -301,13 +301,15 @@ export class AssignmentService {
     }
 
     // Default to standard format
-    // Include click_id as placeholder {click_id} in tracking URL
-    // Publisher can replace it with their own click_id, or system will generate one dynamically
+    // Generate click_id upfront so it's included in the tracking URL
+    // This allows the click_id to be passed through the entire redirect chain
+    const clickId = generateClickId(36);
+    
     return generateTrackingURL(
       baseURL,
       assignment.offer_id,
       assignment.publisher_id,
-      { click_id: '{click_id}' }  // Placeholder - will be replaced by publisher or generated dynamically
+      { click_id: clickId }  // Only include pre-generated click_id
     );
   }
   
