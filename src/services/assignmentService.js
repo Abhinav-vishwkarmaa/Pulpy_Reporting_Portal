@@ -9,7 +9,7 @@ export class AssignmentService {
     try {
       // Support both new multi-publisher format and legacy single-publisher format
       const isMultiPublisher = Array.isArray(data.publishers);
-      
+
       if (isMultiPublisher) {
         return await this.createMultiple(data);
       } else {
@@ -36,7 +36,7 @@ export class AssignmentService {
     // Process each publisher assignment
     for (let i = 0; i < publishers.length; i++) {
       const pubData = publishers[i];
-      
+
       try {
         // Verify publisher exists
         const publisher = await publisherService.findById(pubData.publisher_id);
@@ -116,13 +116,13 @@ export class AssignmentService {
         }
       } catch (error) {
         let errorMessage = error.message || 'Failed to create assignment';
-        
+
         // Check if it's a database schema error (missing columns)
         if (error.code === 'ER_BAD_FIELD_ERROR' || error.message?.includes('Unknown column')) {
           errorMessage = 'Database schema is outdated. Please run migration: src/db/migrations/004_add_assignment_fields.sql';
           logger.error('AssignmentService.createMultiple: Database schema error - migration required');
         }
-        
+
         errors.push({
           index: i,
           publisher_id: pubData.publisher_id,
@@ -149,7 +149,7 @@ export class AssignmentService {
     if (!publisher) {
       throw new Error('Publisher not found');
     }
-    
+
     const offer = await offerService.findById(data.offer_id);
     if (!offer) {
       throw new Error('Offer not found');
@@ -184,7 +184,7 @@ export class AssignmentService {
         data.status || 'active',
       ]
     );
-    
+
     const [rows] = await pool.query(
       `SELECT po.*, 
               p.email as publisher_email, p.company_name as publisher_company,
@@ -196,14 +196,14 @@ export class AssignmentService {
        LIMIT 1`,
       [data.publisher_id, data.offer_id]
     );
-    
+
     const assignment = Array.isArray(rows) ? rows[0] : rows;
     return this.formatAssignment(assignment);
   }
 
   formatAssignment(assignment) {
     if (!assignment) return null;
-    
+
     return {
       id: assignment.id,
       publisher_id: assignment.publisher_id,
@@ -231,7 +231,7 @@ export class AssignmentService {
       offer_category: assignment.offer_category,
     };
   }
-  
+
   async findById(id) {
     const [rows] = await pool.query(
       `SELECT po.*, 
@@ -246,7 +246,7 @@ export class AssignmentService {
     const assignment = Array.isArray(rows) ? rows[0] : rows;
     return this.formatAssignment(assignment);
   }
-  
+
   async findAll(filters = {}) {
     let query = `
       SELECT po.*, 
@@ -258,12 +258,12 @@ export class AssignmentService {
       WHERE 1=1
     `;
     const params = [];
-    
+
     if (filters.publisher_id) {
       query += ` AND po.publisher_id = ?`;
       params.push(filters.publisher_id);
     }
-    
+
     if (filters.offer_id) {
       query += ` AND po.offer_id = ?`;
       params.push(filters.offer_id);
@@ -273,19 +273,19 @@ export class AssignmentService {
       query += ` AND po.status = ?`;
       params.push(filters.status);
     }
-    
+
     query += ' ORDER BY po.assigned_at DESC';
-    
+
     const [rows] = await pool.query(query, params);
     return rows.map(row => this.formatAssignment(row));
   }
-  
+
   async generateTrackingURL(assignmentId, baseURL, format = 'standard') {
     const assignment = await this.findById(assignmentId);
     if (!assignment) {
       return null;
     }
-    
+
     if (format === 'alternative') {
       // Get advertiser ID from offer
       const offer = await offerService.findById(assignment.offer_id);
@@ -301,29 +301,28 @@ export class AssignmentService {
     }
 
     // Default to standard format
-    // Generate click_id upfront so it's included in the tracking URL
-    // This allows the click_id to be passed through the entire redirect chain
-    const clickId = generateClickId(36);
-    
+    // Do NOT generate click_id upfront, but pass the placeholder.
+    // This allows the UI to show {click_id} in the generated URL.
+
     return generateTrackingURL(
       baseURL,
       assignment.offer_id,
       assignment.publisher_id,
-      { click_id: clickId }  // Only include pre-generated click_id
+      { click_id: '{click_id}' }
     );
   }
-  
+
   async getPayout(assignmentId) {
     const assignment = await this.findById(assignmentId);
     if (!assignment) {
       return null;
     }
-    
+
     // If payout_override exists, use it; otherwise use offer's affiliate_model_cost
     if (assignment.payout_override) {
       return parseFloat(assignment.payout_override);
     }
-    
+
     const offer = await offerService.findById(assignment.offer_id);
     return offer ? parseFloat(offer.affiliate_model_cost) : null;
   }

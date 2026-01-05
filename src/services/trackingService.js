@@ -28,34 +28,34 @@ export class TrackingService {
         resolved_offer_id: offerId,
         resolved_publisher_id: publisherId
       });
-      
+
       // Validate offer
       const offer = await offerService.findById(offerId);
       if (!offer) {
         throw new Error('Offer not found');
       }
-      
+
       // Validate publisher
       const publisher = await publisherService.findById(publisherId);
       if (!publisher) {
         throw new Error('Publisher not found');
       }
-      
+
       if (publisher.status !== 'active') {
         throw new Error('Publisher is not active');
       }
-      
+
       // Get assignment
       const [assignmentRows] = await pool.query(
         'SELECT * FROM publisher_offers WHERE publisher_id = ? AND offer_id = ? AND status = ?',
         [publisherId, offerId, 'active']
       );
-      
+
       const assignment = Array.isArray(assignmentRows) ? assignmentRows[0] : assignmentRows;
       if (!assignment) {
         throw new Error('Assignment not found or inactive');
       }
-      
+
       // Apply status and capping checks before recording click
       let fallbackRedirect = await this.getFallbackRedirect(offer);
       // Provide default fallback if none is configured (prevents redirecting to invalid offer URLs)
@@ -107,21 +107,21 @@ export class TrackingService {
       if (await this.isCappingTypeHit(offer)) {
         return await this.applyCapAction(offer, fallbackRedirect);
       }
-      
+
       // Parse device info
       const userAgent = request.headers['user-agent'] || '';
       const deviceInfo = parseDevice(userAgent);
-      
+
       // Extract IP
       const ip = extractIP(request);
-      
+
       // Get country
       const country = getCountryFromHeaders(request) || null;
-      
+
       // Extract domain from referrer
       const referrer = request.headers.referer || request.headers.referrer || null;
       const domain = extractDomain(referrer);
-      
+
       // ============================================
       // CRITICAL: Generate click_id BEFORE database insert and redirect
       // ============================================
@@ -131,11 +131,21 @@ export class TrackingService {
       // 3. We maintain control over click tracking (not dependent on downstream)
       // 4. We can track the full click journey across multiple redirects
       // ============================================
-      
+
       // Use provided click_id from URL (if present) or generate a new one
       // This allows pre-generated tracking URLs to work correctly
       let clickUuid = query.click_id || null;
-      
+
+      // Handle placeholder values by treating them as null so we generate a real ID
+      if (clickUuid && (
+        clickUuid === '{click_id}' ||
+        clickUuid === '<click_id>' ||
+        clickUuid === '{CLICK_ID}' ||
+        clickUuid === '<CLICK_ID>'
+      )) {
+        clickUuid = null;
+      }
+
       if (!clickUuid) {
         // Generate a production-grade URL-safe click_id (36 chars to match database CHAR(36))
         clickUuid = generateClickId(36);
@@ -146,11 +156,11 @@ export class TrackingService {
           'SELECT id, click_uuid FROM clicks WHERE click_uuid = ? LIMIT 1',
           [clickUuid]
         );
-        
+
         if (existingClick && existingClick.length > 0) {
-          logger.warn('Click ID already exists, using existing click record:', { 
+          logger.warn('Click ID already exists, using existing click record:', {
             click_id: clickUuid,
-            existing_id: existingClick[0].id 
+            existing_id: existingClick[0].id
           });
           // Use existing click record - don't create duplicate
           const existingClickRecord = existingClick[0];
@@ -159,22 +169,22 @@ export class TrackingService {
             [existingClickRecord.id]
           );
           const existingClickData = Array.isArray(existingClickRows) ? existingClickRows[0] : existingClickRows;
-          
+
           // Still need to redirect, so continue with existing click
           clickUuid = existingClickData.click_uuid;
-          
+
           // Get redirect URL and return (skip insert)
           let redirectUrl = assignment.destination_url || offer.offer_url;
           if (offer.status === 'deactivate') {
             redirectUrl = offer.fallback_url || redirectUrl;
           }
-          
+
           redirectUrl = replaceMacros(redirectUrl, {
             click_id: clickUuid,
             rcid: query.rcid || '',
             tid: query.tid || '',
           });
-          
+
           redirectUrl = appendClickParams(redirectUrl, {
             click_id: clickUuid,
             tid: query.tid || null,
@@ -184,7 +194,7 @@ export class TrackingService {
             google_id: query.google_id || null,
             android_id: query.android_id || null,
           });
-          
+
           return {
             redirect: redirectUrl,
             clickId: clickUuid,
@@ -193,7 +203,7 @@ export class TrackingService {
           logger.info('Using provided click_id from URL:', { click_id: clickUuid });
         }
       }
-      
+
       // Insert click with pre-generated click_id
       const [clickResult] = await pool.query(
         `INSERT INTO clicks (
@@ -229,12 +239,12 @@ export class TrackingService {
           query.tid || null,
         ]
       );
-      
-      
+
+
       const clickId = clickResult.insertId || clickResult[0]?.insertId;
       const [clickRows] = await pool.query('SELECT id, click_uuid FROM clicks WHERE id = ?', [clickId]);
       const click = Array.isArray(clickRows) ? clickRows[0] : clickRows;
-      
+
       // Re-validate offer before determining redirect URL
       // Never use offer.offer_url if offer is expired or not live
       const offerValidationCheck = offerService.checkOfferValidity(offer);
@@ -253,27 +263,27 @@ export class TrackingService {
           error_type: offerValidationCheck.error_type
         };
       }
-      
+
       // Only use offer URLs if offer is valid
       // Determine redirect URL using priority: assignment.destination_url OR offer.offer_url
       // assignment.destination_url is an override, offer.offer_url is the default
       let redirectUrl = assignment.destination_url || offer.offer_url;
-      
+
       if (offer.status === 'deactivate') {
         redirectUrl = offer.fallback_url || redirectUrl;
       }
-      
+
       if (!redirectUrl) {
         throw new Error('No destination URL available for redirect');
       }
-      
+
       // Replace macros in URL ({click_id}, {rcid}, {tid})
       redirectUrl = replaceMacros(redirectUrl, {
         click_id: click.click_uuid,
         rcid: query.rcid || '',
         tid: query.tid || '',
       });
-      
+
       // Append click parameters as query string (if not already in URL via macros)
       redirectUrl = appendClickParams(redirectUrl, {
         click_id: click.click_uuid,
@@ -284,7 +294,7 @@ export class TrackingService {
         google_id: query.google_id || null,
         android_id: query.android_id || null,
       });
-      
+
       // Final validation check: Ensure offer is still valid before redirecting
       // This prevents redirecting to expired or non-live offers
       const finalValidation = offerService.checkOfferValidity(offer);
@@ -303,10 +313,10 @@ export class TrackingService {
           error_type: finalValidation.error_type
         };
       }
-      
+
       // Update daily stats
       await this.updateDailyStats(offerId, publisherId, 'click');
-      
+
       return {
         redirect: redirectUrl,
         clickId: click.click_uuid,
@@ -316,7 +326,7 @@ export class TrackingService {
       throw error;
     }
   }
-  
+
   async isTotalCapHit(offer) {
     if (!offer.total_cap || offer.total_cap <= 0) return false;
     const [rows] = await pool.query('SELECT COUNT(*) AS cnt FROM conversions WHERE offer_id = ?', [offer.id]);
@@ -378,18 +388,18 @@ export class TrackingService {
     // Never use the original offer URL as fallback
     return null;
   }
-  
+
   async trackImpression(query, request) {
     try {
       const offerId = parseInt(query.offer_id);
       const publisherId = parseInt(query.pub_id);
-      
+
       // Validate offer
       const offer = await offerService.findById(offerId);
       if (!offer) {
         return { success: false, error: 'Offer not found' };
       }
-      
+
       // Validate publisher
       const publisher = await publisherService.findById(publisherId);
       if (!publisher) {
@@ -405,17 +415,17 @@ export class TrackingService {
         'SELECT * FROM publisher_offers WHERE publisher_id = ? AND offer_id = ? AND status = ?',
         [publisherId, offerId, 'active']
       );
-      
+
       const assignment = Array.isArray(assignmentRows) ? assignmentRows[0] : assignmentRows;
       if (!assignment) {
         return { success: false, error: 'Assignment not found or inactive' };
       }
-      
+
       // Extract info
       const ip = extractIP(request);
       const userAgent = request.headers['user-agent'] || '';
       const referrer = request.headers.referer || request.headers.referrer || null;
-      
+
       // Insert impression
       const impUuid = uuidv4();
       await pool.query(
@@ -424,17 +434,17 @@ export class TrackingService {
         ) VALUES (?, ?, ?, ?, ?, ?, NOW(), NOW())`,
         [impUuid, offerId, publisherId, ip, userAgent, referrer]
       );
-      
+
       // Update daily stats
       await this.updateDailyStats(offerId, publisherId, 'impression');
-      
+
       return { success: true, impUuid };
     } catch (error) {
       logger.error('TrackingService.trackImpression error:', error);
       return { success: false, error: error.message };
     }
   }
-  
+
   async isAssignmentBudgetCapHit(assignment, offerId, publisherId) {
     if (!assignment.capping_budget_duration || !assignment.capping_budget_amount) {
       return false;
@@ -463,7 +473,7 @@ export class TrackingService {
        WHERE offer_id = ? AND publisher_id = ? AND ${dateCondition}`,
       [offerId, publisherId]
     );
-    
+
     const totalRevenue = parseFloat((Array.isArray(rows) ? rows[0] : rows).total_revenue || 0);
     return totalRevenue >= capAmount;
   }
@@ -496,7 +506,7 @@ export class TrackingService {
        WHERE offer_id = ? AND publisher_id = ? AND ${dateCondition}`,
       [offerId, publisherId]
     );
-    
+
     const count = parseInt((Array.isArray(rows) ? rows[0] : rows).conversion_count || 0);
     return count >= capCount;
   }
@@ -504,7 +514,7 @@ export class TrackingService {
   async updateDailyStats(offerId, publisherId, type) {
     try {
       const today = new Date().toISOString().split('T')[0];
-      
+
       // Upsert daily stats
       if (type === 'click') {
         // Unique click: first click from same IP + publisher + offer on same day
