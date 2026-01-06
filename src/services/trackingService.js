@@ -132,79 +132,26 @@ export class TrackingService {
       // 4. We can track the full click journey across multiple redirects
       // ============================================
 
-      // Use provided click_id from URL (if present) or generate a new one
-      // This allows pre-generated tracking URLs to work correctly
-      let clickUuid = query.click_id || null;
+      // ============================================
+      // CRITICAL: Always generate NEW click_uuid for internal/platform tracking
+      // ============================================
+      // The affiliate's provided click_id is stored in 'tid' for postbacks.
+      // We NEVER using incoming click_id as our internal click_uuid.
 
-      // Handle placeholder values by treating them as null so we generate a real ID
-      if (clickUuid && (
-        clickUuid === '{click_id}' ||
-        clickUuid === '<click_id>' ||
-        clickUuid === '{CLICK_ID}' ||
-        clickUuid === '<CLICK_ID>'
-      )) {
-        clickUuid = null;
-      }
+      const clickUuid = generateClickId(36);
+      logger.info('Generated new internal click_uuid:', { click_uuid: clickUuid, offer_id: offerId });
 
-      if (!clickUuid) {
-        // Generate a production-grade URL-safe click_id (36 chars to match database CHAR(36))
-        clickUuid = generateClickId(36);
-        logger.info('Generated new click_id:', { click_id: clickUuid, offer_id: offerId, publisher_id: publisherId });
-      } else {
-        // Validate that provided click_id doesn't already exist (prevent duplicates)
-        const [existingClick] = await pool.query(
-          'SELECT id, click_uuid FROM clicks WHERE click_uuid = ? LIMIT 1',
-          [clickUuid]
-        );
+      // Check if affiliate provided a click_id (store as tid)
+      const affiliateClickId = query.click_id || null;
+      // Filter out placeholders
+      const tid = (affiliateClickId &&
+        affiliateClickId !== '{click_id}' &&
+        affiliateClickId !== '<click_id>' &&
+        affiliateClickId !== '{CLICK_ID}' &&
+        affiliateClickId !== '<CLICK_ID>'
+      ) ? affiliateClickId : (query.tid || null);
 
-        if (existingClick && existingClick.length > 0) {
-          logger.warn('Click ID already exists, using existing click record:', {
-            click_id: clickUuid,
-            existing_id: existingClick[0].id
-          });
-          // Use existing click record - don't create duplicate
-          const existingClickRecord = existingClick[0];
-          const [existingClickRows] = await pool.query(
-            'SELECT id, click_uuid FROM clicks WHERE id = ?',
-            [existingClickRecord.id]
-          );
-          const existingClickData = Array.isArray(existingClickRows) ? existingClickRows[0] : existingClickRows;
-
-          // Still need to redirect, so continue with existing click
-          clickUuid = existingClickData.click_uuid;
-
-          // Get redirect URL and return (skip insert)
-          let redirectUrl = assignment.destination_url || offer.offer_url;
-          if (offer.status === 'deactivate') {
-            redirectUrl = offer.fallback_url || redirectUrl;
-          }
-
-          redirectUrl = replaceMacros(redirectUrl, {
-            click_id: clickUuid,
-            rcid: query.rcid || '',
-            tid: query.tid || '',
-          });
-
-          redirectUrl = appendClickParams(redirectUrl, {
-            click_id: clickUuid,
-            tid: query.tid || null,
-            rcid: query.rcid || null,
-            source_id: query.source_id || null,
-            device_id: query.device_id || null,
-            google_id: query.google_id || null,
-            android_id: query.android_id || null,
-          });
-
-          return {
-            redirect: redirectUrl,
-            clickId: clickUuid,
-          };
-        } else {
-          logger.info('Using provided click_id from URL:', { click_id: clickUuid });
-        }
-      }
-
-      // Insert click with pre-generated click_id
+      // Insert click with newly generated click_uuid
       const [clickResult] = await pool.query(
         `INSERT INTO clicks (
           click_uuid, offer_id, publisher_id, publisher_offer_id,
@@ -236,7 +183,7 @@ export class TrackingService {
           query.google_id || null,
           query.android_id || null,
           query.rcid || null,
-          query.tid || null,
+          tid, // Storing affiliate's click_id here
         ]
       );
 

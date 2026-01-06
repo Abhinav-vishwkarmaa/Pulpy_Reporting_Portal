@@ -1,0 +1,490 @@
+{
+    "info": {
+        "name": "BNG MIS Reporting Portal",
+        "description": "API collection for Pulpy Reporting Portal Backend",
+        "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+    },
+    "item": [
+        {
+            "name": "Auth",
+            "item": [
+                {
+                    "name": "Login",
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "exec": [
+                                    "var jsonData = pm.response.json();",
+                                    "if (jsonData.success && jsonData.data && jsonData.data.token) {",
+                                    "    pm.collectionVariables.set(\"jwt_token\", jsonData.data.token);",
+                                    "    console.log(\"Token updated automatically\");",
+                                    "}"
+                                ],
+                                "type": "text/javascript"
+                            }
+                        }
+                    ],
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"email\": \"admin@bng.com\",\n    \"password\": \"admin123\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{base_url}}/api/auth/login",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "auth",
+                                "login"
+                            ]
+                        }
+                    },
+                    "response": []
+                }
+            ]
+        },
+        {
+            "name": "Admin - Publishers",
+            "item": [
+                {
+                    "name": "Create Publisher",
+                    "request": {
+                        "auth": {
+                            "type": "basic",
+                            "basic": [
+                                {
+                                    "key": "password",
+                                    "value": "admin123",
+                                    "type": "string"
+                                },
+                                {
+                                    "key": "username",
+                                    "value": "admin@bng.com",
+                                    "type": "string"
+                                }
+                            ]
+                        },
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"email\": \"publisher1@example.com\",\n    \"first_name\": \"John\",\n    \"company_name\": \"Media Corp\",\n    \"country\": \"US\",\n    \"password\": \"password123\",\n    \"global_postback_url\": \"https://publisher.com/postback?click_id={click_id}&payout={payout}\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{base_url}}/api/admin/publishers",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "admin",
+                                "publishers"
+                            ]
+                        }
+                    },
+                    "response": []
+                },
+                {
+                    "name": "List Publishers",
+                    "request": {
+                        "auth": {
+                            "type": "basic",
+                            "basic": [
+                                {
+                                    "key": "password",
+                                    "value": "admin123",
+                                    "type": "string"
+                                },
+                                {
+                                    "key": "username",
+                                    "value": "admin@bng.com",
+                                    "type": "string"
+                                }
+                            ]
+                        },
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{base_url}}/api/admin/publishers",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "admin",
+                                "publishers"
+                            ]
+                        }
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Get Publisher",
+                    "request": {
+                        "auth": {
+                            "type": "basic",
+                            "basic": [
+                                {
+                                    "key": "password",
+                                    "value": "admin123",
+                                    "type": "string"
+                                },
+                                {
+                                    "key": "username",
+                                    "value": "admin@bng.com",
+                                    "type": "string"
+                                }
+                            ]
+                        },
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{base_url}}/api/admin/publishers/1",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "admin",
+                                "publishers",
+                                "1"
+                            ]
+                        }
+                    },
+                    "response": []
+                }
+            ]
+        },
+        {
+            "name": "Admin - Offers",
+            "item": [
+                {
+                    "name": "Create Offer",
+                    "request": {
+                        "auth": {
+                            "type": "bearer",
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "value": "{{jwt_token}}",
+                                    "type": "string"
+                                }
+                            ]
+                        },
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"advertiser_id\": 1,\n    \"name\": \"Test Offer\",\n    \"status\": \"live\",\n    \"offer_currency\": \"USD\",\n    \"country\": \"US\",\n    \"advertiser_model\": \"CPA\",\n    \"advertiser_amount\": 10,\n    \"affiliate_model\": \"CPA\",\n    \"affiliate_amount\": 5,\n    \"offer_url\": \"https://landing.com\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{base_url}}/api/admin/offers",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "admin",
+                                "offers"
+                            ]
+                        }
+                    },
+                    "response": []
+                },
+                {
+                    "name": "List Offers",
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{base_url}}/api/admin/offers",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "admin",
+                                "offers"
+                            ]
+                        }
+                    },
+                    "response": []
+                }
+            ]
+        },
+        {
+            "name": "Admin - Assignments",
+            "item": [
+                {
+                    "name": "Create Assignment",
+                    "request": {
+                        "auth": {
+                            "type": "basic",
+                            "basic": [
+                                {
+                                    "key": "password",
+                                    "value": "admin123",
+                                    "type": "string"
+                                },
+                                {
+                                    "key": "username",
+                                    "value": "admin@bng.com",
+                                    "type": "string"
+                                }
+                            ]
+                        },
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"offer_id\": 1,\n    \"publishers\": [\n        {\n            \"publisher_id\": 1,\n            \"payout_override\": 6,\n            \"status\": \"active\"\n        }\n    ]\n}"
+                        },
+                        "url": {
+                            "raw": "{{base_url}}/api/admin/assignments",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "admin",
+                                "assignments"
+                            ]
+                        }
+                    },
+                    "response": []
+                }
+            ]
+        },
+        {
+            "name": "Admin - Testing",
+            "item": [
+                {
+                    "name": "Test Conversion",
+                    "request": {
+                        "auth": {
+                            "type": "basic",
+                            "basic": [
+                                {
+                                    "key": "password",
+                                    "value": "admin123",
+                                    "type": "string"
+                                },
+                                {
+                                    "key": "username",
+                                    "value": "admin@bng.com",
+                                    "type": "string"
+                                }
+                            ]
+                        },
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"affiliate_url\": \"http://localhost:5000/click?offer_id=1&pub_id=1&click_id=TEST_123\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{base_url}}/api/admin/test-conversion",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "admin",
+                                "test-conversion"
+                            ]
+                        }
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Test Affiliate Postback",
+                    "request": {
+                        "auth": {
+                            "type": "basic",
+                            "basic": [
+                                {
+                                    "key": "password",
+                                    "value": "admin123",
+                                    "type": "string"
+                                },
+                                {
+                                    "key": "username",
+                                    "value": "admin@bng.com",
+                                    "type": "string"
+                                }
+                            ]
+                        },
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"publisher_id\": 1,\n    \"affiliate_click_id\": \"TEST_aff_123\",\n    \"status\": \"approved\",\n    \"payout\": 10,\n    \"amount\": 20\n}"
+                        },
+                        "url": {
+                            "raw": "{{base_url}}/api/admin/test-affiliate-postback",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "admin",
+                                "test-affiliate-postback"
+                            ]
+                        }
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Affiliate Postback Logs",
+                    "request": {
+                        "auth": {
+                            "type": "basic",
+                            "basic": [
+                                {
+                                    "key": "password",
+                                    "value": "admin123",
+                                    "type": "string"
+                                },
+                                {
+                                    "key": "username",
+                                    "value": "admin@bng.com",
+                                    "type": "string"
+                                }
+                            ]
+                        },
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{base_url}}/api/admin/affiliate-postback-logs?limit=10",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "admin",
+                                "affiliate-postback-logs"
+                            ],
+                            "query": [
+                                {
+                                    "key": "limit",
+                                    "value": "10"
+                                }
+                            ]
+                        }
+                    },
+                    "response": []
+                }
+            ]
+        },
+        {
+            "name": "Tracking",
+            "item": [
+                {
+                    "name": "Click",
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{base_url}}/click?offer_id=1&pub_id=1&click_id=TEST_VISIT",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "click"
+                            ],
+                            "query": [
+                                {
+                                    "key": "offer_id",
+                                    "value": "1"
+                                },
+                                {
+                                    "key": "pub_id",
+                                    "value": "1"
+                                },
+                                {
+                                    "key": "click_id",
+                                    "value": "TEST_VISIT"
+                                }
+                            ]
+                        }
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Postback (Conversion)",
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{base_url}}/postback?click_id={PLATFORM_CLICK_ID}&status=approved",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "postback"
+                            ],
+                            "query": [
+                                {
+                                    "key": "click_id",
+                                    "value": "{PLATFORM_CLICK_ID}"
+                                },
+                                {
+                                    "key": "status",
+                                    "value": "approved"
+                                }
+                            ]
+                        }
+                    },
+                    "response": []
+                }
+            ]
+        }
+    ],
+    "variable": [
+        {
+            "key": "base_url",
+            "value": "http://localhost:5000",
+            "type": "string"
+        },
+        {
+            "key": "jwt_token",
+            "value": "",
+            "type": "string"
+        }
+    ]
+}

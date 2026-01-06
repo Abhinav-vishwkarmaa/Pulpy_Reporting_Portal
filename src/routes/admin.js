@@ -23,6 +23,10 @@ async function adminRoutes(fastify) {
 
   // Test conversion
   fastify.post('/test-conversion', adminController.testConversion);
+
+  // Test Affiliate Postback (Debug Tool)
+  fastify.post('/test-affiliate-postback', adminController.testAffiliatePostback);
+  fastify.get('/affiliate-postback-logs', adminController.getAffiliatePostbackLogs);
 }
 
 export default adminRoutes;

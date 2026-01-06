@@ -7,9 +7,9 @@ export class PostbackController {
     try {
       // Support both GET and POST
       const params = request.method === 'GET' ? request.query : request.body;
-      
+
       const result = await postbackService.processPostback(params, request);
-      
+
       // Transform conversion data: rename click_uuid to click_id for API response
       let conversionData = result.conversion || null;
       if (conversionData && conversionData.click_uuid) {
@@ -20,11 +20,12 @@ export class PostbackController {
         // Remove click_uuid from response (keep only click_id)
         delete conversionData.click_uuid;
       }
-      
+
       return reply.send({
         success: result.success,
         message: result.message,
         duplicate: result.duplicate || false,
+        affiliate_postback: result.affiliate_postback || null,
         data: conversionData,
         timestamp: new Date().toISOString(),
       });

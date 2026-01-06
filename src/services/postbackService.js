@@ -13,11 +13,11 @@ export class PostbackService {
   async processPostback(query, request) {
     try {
       const { click_id, rcid, amount, status = 'approved' } = query;
-      
+
       if (!click_id && !rcid) {
         throw new Error('Either click_id or rcid is required');
       }
-      
+
       // Find click if click_id provided
       let click = null;
       if (click_id) {
@@ -26,19 +26,19 @@ export class PostbackService {
           [click_id]
         );
         click = Array.isArray(clickRows) ? clickRows[0] : clickRows;
-        
+
         if (!click) {
           throw new Error('Click not found');
         }
       }
-      
+
       // If rcid provided, check for existing conversion (dedupe)
       if (rcid) {
         const [existingRows] = await pool.query(
           'SELECT * FROM conversions WHERE rcid = ? AND offer_id = ?',
           [rcid, click ? click.offer_id : null]
         );
-        
+
         if (existingRows && existingRows.length > 0) {
           return {
             success: true,
@@ -48,14 +48,14 @@ export class PostbackService {
           };
         }
       }
-      
+
       if (!click && !rcid) {
         throw new Error('Cannot process postback without click_id or rcid');
       }
-      
+
       // Get offer and assignment
       let offerId = click ? click.offer_id : null;
-      
+
       // If no offerId from click, try to find it from rcid (check previous conversion or click)
       if (!offerId && rcid) {
         // Try to find from existing conversion
@@ -76,11 +76,11 @@ export class PostbackService {
           }
         }
       }
-      
+
       if (!offerId) {
         throw new Error('Offer ID not found. Cannot determine offer from click_id or rcid');
       }
-      
+
       const offer = await offerService.findById(offerId);
       if (!offer) {
         throw new Error('Offer not found');
@@ -98,25 +98,25 @@ export class PostbackService {
           duplicate: false,
         };
       }
-      
+
       const publisherId = click ? click.publisher_id : null;
       const publisherOfferId = click ? click.publisher_offer_id : null;
-      
+
       // Get assignment if available
       let assignment = null;
       if (publisherOfferId) {
         assignment = await assignmentService.findById(publisherOfferId);
       }
-      
+
       // Get payout (use assignment payout_override if available, otherwise offer affiliate_amount)
       let payout = parseFloat(offer.affiliate_amount);
       if (assignment?.payout_override) {
         payout = parseFloat(assignment.payout_override);
       }
-      
+
       // Use provided amount or default to payout
       const conversionAmount = amount ? parseFloat(amount) : payout;
-      
+
       // Determine conversion status based on conversion_approval_percentage
       let finalStatus = status;
       if (assignment?.conversion_approval_percentage !== null && assignment?.conversion_approval_percentage !== undefined) {
@@ -129,17 +129,17 @@ export class PostbackService {
           finalStatus = 'pending';
         }
       }
-      
+
       // Extract IP
       const ip = extractIP(request);
-      
+
       // Store postback payload
       const postbackPayload = {
         query: query,
         headers: request.headers,
         timestamp: new Date().toISOString(),
       };
-      
+
       // Check assignment-level capping (budget)
       if (assignment && await this.isAssignmentBudgetCapHit(assignment, offerId, publisherId)) {
         const conversionUuid = uuidv4();
@@ -199,7 +199,7 @@ export class PostbackService {
           duplicate: false,
         };
       }
-      
+
       // Cap checks before inserting conversion (offer-level)
       const capExceeded = await this.isCapExceeded(offer);
       if (capExceeded) {
@@ -254,33 +254,42 @@ export class PostbackService {
           JSON.stringify(postbackPayload),
         ]
       );
-      
+
       const insertId = insertResult.insertId || insertResult[0]?.insertId;
       const [convRows] = await pool.query('SELECT * FROM conversions WHERE id = ?', [insertId]);
       const conversion = Array.isArray(convRows) ? convRows[0] : convRows;
-      
+
       // Update daily stats
       await this.updateDailyStats(offerId, conversionAmount, payout);
-      
+
       // Get publisher for global_postback_url fallback
       let publisher = null;
       if (publisherId) {
         publisher = await publisherService.findById(publisherId);
       }
-      
+
       // Resolve callback URL: assignment.callback_url OR publisher.global_postback_url
       const callbackUrl = assignment?.callback_url || publisher?.global_postback_url;
-      
+
       // Send postback to publisher's callback URL if available
+      console.log(callbackUrl);
+      let postbackResult = null;
       if (callbackUrl && conversion) {
-        await this.sendPublisherPostback(callbackUrl, conversion, click);
+        postbackResult = await this.sendPublisherPostback(callbackUrl, conversion, click);
+      } else {
+        postbackResult = {
+          success: false,
+          executed: false,
+          reason: !callbackUrl ? 'No callback URL configured' : 'No conversion created'
+        };
       }
-      
+
       return {
         success: true,
         message: 'Conversion recorded successfully',
         conversion,
         duplicate: false,
+        affiliate_postback: postbackResult
       };
     } catch (error) {
       // Handle MySQL duplicate key violations
@@ -296,8 +305,8 @@ export class PostbackService {
         }
         // Check if it's the rcid + offer_id unique constraint violation
         if (error.message && error.message.includes('uniq_rcid_offer')) {
-        return {
-          success: true,
+          return {
+            success: true,
             message: 'Conversion already exists (deduplicated by rcid)',
             duplicate: true,
             error_type: 'duplicate_rcid_offer'
@@ -325,12 +334,12 @@ export class PostbackService {
       throw error;
     }
   }
-  
+
   async updateDailyStats(offerId, revenue, payout) {
     try {
       const today = new Date().toISOString().split('T')[0];
       const profit = revenue - payout;
-      
+
       await pool.query(
         `INSERT INTO daily_offer_stats (offer_id, day, conversions, revenue, payout, profit, created_at, updated_at)
          VALUES (?, ?, 1, ?, ?, ?, NOW(), NOW())
@@ -375,7 +384,7 @@ export class PostbackService {
        WHERE offer_id = ? AND publisher_id = ? AND ${dateCondition}`,
       [offerId, publisherId]
     );
-    
+
     const totalRevenue = parseFloat((Array.isArray(rows) ? rows[0] : rows).total_revenue || 0);
     return totalRevenue >= capAmount;
   }
@@ -408,59 +417,237 @@ export class PostbackService {
        WHERE offer_id = ? AND publisher_id = ? AND ${dateCondition}`,
       [offerId, publisherId]
     );
-    
+
     const count = parseInt((Array.isArray(rows) ? rows[0] : rows).conversion_count || 0);
     return count >= capCount;
   }
-
   async sendPublisherPostback(callbackUrl, conversion, click) {
+    const startTime = Date.now();
+    let finalUrl = callbackUrl;
+    let httpStatus = 0;
+    let responseBody = '';
+    let errorMessage = null;
+
+    return new Promise((resolve) => {
+      try {
+        // Correct Macro Mapping:
+        // {affiliate_click_id} -> click.tid (The ID affiliate provided)
+        // {click_id} -> click.tid (Standard mapping for affiliates who expect their ID back in click_id param)
+        const affiliateClickId = click?.tid || '';
+
+        // Replace macros in callback URL using replaceMacros function
+        const url = replaceMacros(callbackUrl, {
+          click_id: affiliateClickId, // Map standard click_id macro to affiliate's ID
+          affiliate_click_id: affiliateClickId, // Specific macro
+          conversion_id: conversion.conversion_uuid || '',
+          rcid: conversion.rcid || '',
+          payout: conversion.payout?.toString() || '0',
+          amount: conversion.amount?.toString() || '0',
+          status: conversion.status || 'pending',
+        });
+
+        // Also replace additional macros that might be used manually
+        finalUrl = url
+          .replace(/{affiliate_click_id}/gi, affiliateClickId)
+          .replace(/{conversion_id}/gi, conversion.conversion_uuid || '')
+          .replace(/{CONVERSION_ID}/gi, conversion.conversion_uuid || '')
+          .replace(/{payout}/gi, conversion.payout?.toString() || '0')
+          .replace(/{PAYOUT}/gi, conversion.payout?.toString() || '0')
+          .replace(/{amount}/gi, conversion.amount?.toString() || '0')
+          .replace(/{AMOUNT}/gi, conversion.amount?.toString() || '0')
+          .replace(/{status}/gi, conversion.status || 'pending')
+          .replace(/{STATUS}/gi, conversion.status || 'pending');
+
+        // Send GET request to publisher callback URL
+        const urlObj = new URL(finalUrl);
+        const client = urlObj.protocol === 'https:' ? https : http;
+
+        const req = client.get(finalUrl, { timeout: 5000 }, async (res) => {
+          httpStatus = res.statusCode;
+
+          // Consume response
+          let data = '';
+          res.on('data', (chunk) => { data += chunk; });
+          res.on('end', async () => {
+            responseBody = data.substring(0, 1000); // Truncate if too long
+            logger.info(`Postback sent to publisher: ${finalUrl} - Status: ${res.statusCode}`);
+            logger.info('Publisher Postback Function Success', { url: finalUrl, status: httpStatus });
+
+            // Log success
+            await this.logPostbackAttempt({
+              publisher_id: click?.publisher_id,
+              conversion_id: conversion.id,
+              affiliate_click_id: affiliateClickId,
+              fired_url: finalUrl,
+              http_status: httpStatus,
+              response_body: responseBody,
+              execution_time_ms: Date.now() - startTime
+            });
+
+            resolve({
+              success: httpStatus >= 200 && httpStatus < 300,
+              fired_url: finalUrl,
+              http_status: httpStatus,
+              response_body: responseBody
+            });
+          });
+        });
+
+        req.on('error', async (err) => {
+          errorMessage = err.message;
+          logger.error(`PostbackService.sendPublisherPostback error for ${finalUrl}:`, err.message);
+          logger.error('Publisher Postback Function Failed', { url: finalUrl, error: errorMessage });
+
+          // Log error
+          await this.logPostbackAttempt({
+            publisher_id: click?.publisher_id,
+            conversion_id: conversion.id,
+            affiliate_click_id: affiliateClickId,
+            fired_url: finalUrl,
+            http_status: 0,
+            response_body: null,
+            error_message: errorMessage,
+            execution_time_ms: Date.now() - startTime
+          });
+
+          resolve({
+            success: false,
+            fired_url: finalUrl,
+            http_status: 0,
+            error: errorMessage
+          });
+        });
+
+        req.on('timeout', () => {
+          req.destroy();
+          errorMessage = 'Timeout';
+          logger.warn(`PostbackService.sendPublisherPostback timeout for ${finalUrl}`);
+          logger.error('Publisher Postback Function Failed (Timeout)', { url: finalUrl });
+
+          resolve({
+            success: false,
+            fired_url: finalUrl,
+            http_status: 0,
+            error: 'Timeout'
+          });
+        });
+
+        req.setTimeout(5000);
+      } catch (error) {
+        errorMessage = error.message;
+        logger.error('PostbackService.sendPublisherPostback error:', error);
+        logger.error('Publisher Postback Function Failed (Exception)', { url: finalUrl, error: errorMessage });
+
+        // Use an IIFE to handle async logging in catch block
+        (async () => {
+          await this.logPostbackAttempt({
+            publisher_id: click?.publisher_id,
+            conversion_id: conversion.id,
+            affiliate_click_id: click?.source_id,
+            fired_url: finalUrl,
+            http_status: 0,
+            response_body: null,
+            error_message: errorMessage,
+            execution_time_ms: Date.now() - startTime
+          });
+        })();
+
+        resolve({
+          success: false,
+          fired_url: finalUrl,
+          http_status: 0,
+          error: errorMessage
+        });
+      }
+    });
+  }
+
+  async logPostbackAttempt(data) {
     try {
-      // Replace macros in callback URL using replaceMacros function
-      const url = replaceMacros(callbackUrl, {
-        click_id: conversion.click_uuid || click?.click_uuid || '',
-        conversion_id: conversion.conversion_uuid || '',
-        rcid: conversion.rcid || '',
-        payout: conversion.payout?.toString() || '0',
-        amount: conversion.amount?.toString() || '0',
-        status: conversion.status || 'pending',
-      });
-      
-      // Also replace additional macros that might be used
-      let finalUrl = url
-        .replace(/{conversion_id}/gi, conversion.conversion_uuid || '')
-        .replace(/{CONVERSION_ID}/gi, conversion.conversion_uuid || '')
-        .replace(/{payout}/gi, conversion.payout?.toString() || '0')
-        .replace(/{PAYOUT}/gi, conversion.payout?.toString() || '0')
-        .replace(/{amount}/gi, conversion.amount?.toString() || '0')
-        .replace(/{AMOUNT}/gi, conversion.amount?.toString() || '0')
-        .replace(/{status}/gi, conversion.status || 'pending')
-        .replace(/{STATUS}/gi, conversion.status || 'pending');
+      await pool.query(
+        `INSERT INTO affiliate_postback_logs (
+          publisher_id, conversion_id, affiliate_click_id, fired_url, 
+          http_status, response_body, error_message, execution_time_ms
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          data.publisher_id || 0,
+          data.conversion_id || null,
+          data.affiliate_click_id || null,
+          data.fired_url || '',
+          data.http_status || 0,
+          data.response_body || null,
+          data.error_message || null,
+          data.execution_time_ms || 0
+        ]
+      );
+    } catch (err) {
+      logger.error('Failed to write to affiliate_postback_logs:', err);
+    }
+  }
 
-      // Send GET request to publisher callback URL (async, fire and forget)
-      const urlObj = new URL(finalUrl);
-      const client = urlObj.protocol === 'https:' ? https : http;
-      
-      const req = client.get(finalUrl, { timeout: 5000 }, (res) => {
-        // Log success but don't wait
-        logger.info(`Postback sent to publisher: ${finalUrl} - Status: ${res.statusCode}`);
-        res.on('data', () => {}); // Consume response
-        res.on('end', () => {});
-      });
+  async getPostbackLogs(filters = {}) {
+    try {
+      let query = 'SELECT * FROM affiliate_postback_logs';
+      const params = [];
+      const conditions = [];
 
-      req.on('error', (err) => {
-        logger.error(`PostbackService.sendPublisherPostback error for ${finalUrl}:`, err.message);
-        // Don't throw - postback failures shouldn't fail the conversion
-      });
+      if (filters.publisher_id) {
+        conditions.push('publisher_id = ?');
+        params.push(filters.publisher_id);
+      }
 
-      req.on('timeout', () => {
-        req.destroy();
-        logger.warn(`PostbackService.sendPublisherPostback timeout for ${finalUrl}`);
-      });
+      if (filters.conversion_id) {
+        conditions.push('conversion_id = ?');
+        params.push(filters.conversion_id);
+      }
 
-      req.setTimeout(5000);
+      if (filters.affiliate_click_id) {
+        conditions.push('affiliate_click_id = ?');
+        params.push(filters.affiliate_click_id);
+      }
+
+      if (conditions.length > 0) {
+        query += ' WHERE ' + conditions.join(' AND ');
+      }
+
+      query += ' ORDER BY id DESC';
+
+      if (filters.limit) {
+        query += ' LIMIT ?';
+        params.push(parseInt(filters.limit));
+      } else {
+        query += ' LIMIT 100';
+      }
+
+      if (filters.offset) {
+        query += ' OFFSET ?';
+        params.push(parseInt(filters.offset));
+      }
+
+      const [rows] = await pool.query(query, params);
+
+      // Get total count for pagination
+      let countQuery = 'SELECT COUNT(*) as total FROM affiliate_postback_logs';
+      if (conditions.length > 0) {
+        countQuery += ' WHERE ' + conditions.join(' AND ');
+        // Reuse params excluding limit/offset
+        const countParams = params.slice(0, conditions.length);
+        const [countRows] = await pool.query(countQuery, countParams);
+        return {
+          data: rows,
+          total: countRows[0].total
+        };
+      } else {
+        const [countRows] = await pool.query(countQuery);
+        return {
+          data: rows,
+          total: countRows[0].total
+        };
+      }
+
     } catch (error) {
-      logger.error('PostbackService.sendPublisherPostback error:', error);
-      // Don't throw - postback failures shouldn't fail the conversion
+      logger.error('PostbackService.getPostbackLogs error:', error);
+      throw error;
     }
   }
 
@@ -487,7 +674,7 @@ export class PostbackService {
     if (offer.end_date) {
       const endDate = new Date(offer.end_date);
       endDate.setHours(23, 59, 59, 999); // End of day
-      
+
       if (now > endDate) {
         return {
           valid: false,
@@ -501,7 +688,7 @@ export class PostbackService {
     if (offer.start_date) {
       const startDate = new Date(offer.start_date);
       startDate.setHours(0, 0, 0, 0); // Start of day
-      
+
       if (now < startDate) {
         return {
           valid: false,
@@ -515,7 +702,7 @@ export class PostbackService {
     if (offer.start_time && offer.end_time) {
       const startTime = offer.start_time;
       const endTime = offer.end_time;
-      
+
       // Compare times (HH:MM:SS format)
       if (currentTime < startTime || currentTime > endTime) {
         return {
