@@ -18,7 +18,7 @@ export class ReportService {
         LEFT JOIN conversions conv ON conv.click_uuid = c.click_uuid
         WHERE 1=1
       `;
-      
+
       const filtersBuild = this.buildWhereClause(filters);
       query += filtersBuild.clause;
 
@@ -32,12 +32,12 @@ export class ReportService {
         payout: 0,
         profit: 0,
       };
-      
+
       // Calculate conversion rate
       const conversionRate = summary.unique_clicks > 0
         ? (summary.conversions / summary.unique_clicks) * 100
         : 0;
-      
+
       return {
         ...summary,
         conversion_rate: parseFloat(conversionRate.toFixed(2)),
@@ -47,13 +47,13 @@ export class ReportService {
       throw error;
     }
   }
-  
+
   async getDetailed(filters = {}) {
     try {
       const page = parseInt(filters.page || 1);
       const limit = parseInt(filters.limit || 50);
       const offset = (page - 1) * limit;
-      
+
       let query = `
         SELECT 
           c.id as click_id,
@@ -97,30 +97,31 @@ export class ReportService {
         LEFT JOIN conversions conv ON conv.click_uuid = c.click_uuid
         WHERE 1=1
       `;
-      
+
       const countQuery = `
         SELECT COUNT(*) as total
         FROM clicks c
         LEFT JOIN conversions conv ON conv.click_uuid = c.click_uuid
+        LEFT JOIN offers o ON c.offer_id = o.id
         WHERE 1=1
       `;
-      
+
       // Build WHERE clause for both queries
       const filtersBuild = this.buildWhereClause(filters);
       query += filtersBuild.clause;
       const countQueryFinal = countQuery + filtersBuild.clause;
-      
+
       // Add ordering and pagination
       query += ' ORDER BY c.created_at DESC LIMIT ? OFFSET ?';
       const dataParams = [...filtersBuild.params, limit, offset];
-      
+
       // Get total count
       const [countRows] = await pool.query(countQueryFinal, filtersBuild.params);
       const total = parseInt(countRows[0]?.total || 0);
-      
+
       // Get data
       const [rows] = await pool.query(query, dataParams);
-      
+
       return {
         data: rows,
         pagination: {
@@ -135,91 +136,131 @@ export class ReportService {
       throw error;
     }
   }
-  
+
   buildWhereClause(filters) {
     let clause = '';
     const params = [];
-    
+
     if (filters.date_from) {
       clause += ' AND c.created_at >= ?';
       params.push(filters.date_from);
     }
-    
+
     if (filters.date_to) {
       clause += ' AND c.created_at <= ?';
       params.push(filters.date_to);
     }
-    
+
     if (filters.offer_id) {
       clause += ' AND c.offer_id = ?';
       params.push(filters.offer_id);
     }
-    
+
     if (filters.publisher_id) {
       clause += ' AND c.publisher_id = ?';
       params.push(filters.publisher_id);
     }
-    
+
     if (filters.country) {
       clause += ' AND c.country = ?';
       params.push(filters.country);
     }
-    
+
     if (filters.ip) {
       clause += ' AND c.ip = ?';
       params.push(filters.ip);
     }
-    
+
     if (filters.tid) {
       clause += ' AND c.tid = ?';
       params.push(filters.tid);
     }
-    
+
     if (filters.rcid) {
       clause += ' AND (c.rcid = ? OR conv.rcid = ?)';
       params.push(filters.rcid, filters.rcid);
     }
-    
+
     if (filters.device_brand) {
       clause += ' AND c.device_brand = ?';
       params.push(filters.device_brand);
     }
-    
+
     if (filters.os) {
       clause += ' AND c.os = ?';
       params.push(filters.os);
     }
-    
+
     if (filters.browser) {
       clause += ' AND c.browser = ?';
       params.push(filters.browser);
     }
-    
+
     if (filters.referrer) {
       clause += ' AND c.referrer LIKE ?';
       params.push(`%${filters.referrer}%`);
     }
-    
+
     if (filters.source_id) {
       clause += ' AND c.source_id = ?';
       params.push(filters.source_id);
     }
-    
+
     if (filters.google_id) {
       clause += ' AND c.google_id = ?';
       params.push(filters.google_id);
     }
-    
+
     if (filters.android_id) {
       clause += ' AND c.android_id = ?';
       params.push(filters.android_id);
     }
-    
+
     if (filters.hour !== undefined) {
       clause += ' AND HOUR(c.created_at) = ?';
       params.push(filters.hour);
     }
-    
+
+    if (filters.os_version) {
+      clause += ' AND c.os_version = ?';
+      params.push(filters.os_version);
+    }
+
+    if (filters.device_model) {
+      clause += ' AND c.device_model = ?';
+      params.push(filters.device_model);
+    }
+
+    if (filters.user_agent) {
+      clause += ' AND c.user_agent LIKE ?';
+      params.push(`%${filters.user_agent}%`);
+    }
+
+    if (filters.advertiser_id) {
+      clause += ' AND o.advertiser_id = ?';
+      params.push(filters.advertiser_id);
+    }
+
+    if (filters.isp) {
+      clause += ' AND c.isp = ?';
+      params.push(filters.isp);
+    }
+
+    if (filters.city) {
+      clause += ' AND c.city = ?';
+      params.push(filters.city);
+    }
+
+    if (filters.region) {
+      clause += ' AND c.region = ?';
+      params.push(filters.region);
+    }
+
+    if (filters.domain) {
+      clause += ' AND c.domain = ?';
+      params.push(filters.domain);
+    }
+
     return { clause, params };
   }
 
