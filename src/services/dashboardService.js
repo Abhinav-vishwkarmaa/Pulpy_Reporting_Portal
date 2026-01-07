@@ -13,7 +13,7 @@ export class DashboardService {
     const yesterday = new Date(today);
     yesterday.setDate(yesterday.getDate() - 1);
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-    
+
     return {
       todayStart: today.toISOString().split('T')[0] + ' 00:00:00',
       todayEnd: now.toISOString(),
@@ -26,7 +26,7 @@ export class DashboardService {
   async getDashboardStats() {
     try {
       const dates = this.getDateBoundaries();
-      
+
       // Get conversions (today, yesterday, by status)
       const [conversionsToday] = await pool.query(
         `SELECT 
@@ -41,7 +41,7 @@ export class DashboardService {
         `,
         [dates.todayStart]
       );
-      
+
       const [conversionsYesterday] = await pool.query(
         `SELECT COUNT(*) as total
         FROM conversions
@@ -49,7 +49,7 @@ export class DashboardService {
         `,
         [dates.yesterdayStart]
       );
-      
+
       // Get clicks (today, yesterday, MTD, unique)
       const [clicksToday] = await pool.query(
         `SELECT 
@@ -60,7 +60,7 @@ export class DashboardService {
         `,
         [dates.todayStart]
       );
-      
+
       const [clicksYesterday] = await pool.query(
         `SELECT COUNT(*) as total
         FROM clicks
@@ -68,7 +68,7 @@ export class DashboardService {
         `,
         [dates.yesterdayStart]
       );
-      
+
       const [clicksMTD] = await pool.query(
         `SELECT COUNT(*) as total
         FROM clicks
@@ -76,7 +76,7 @@ export class DashboardService {
         `,
         [dates.monthStart]
       );
-      
+
       // Get impressions (today, MTD)
       const [impressionsToday] = await pool.query(
         `SELECT COUNT(*) as total
@@ -85,7 +85,7 @@ export class DashboardService {
         `,
         [dates.todayStart]
       );
-      
+
       const [impressionsMTD] = await pool.query(
         `SELECT COUNT(*) as total
         FROM impressions
@@ -93,7 +93,7 @@ export class DashboardService {
         `,
         [dates.monthStart]
       );
-      
+
       // Get revenue (today, yesterday, MTD)
       const [revenueToday] = await pool.query(
         `SELECT 
@@ -104,7 +104,7 @@ export class DashboardService {
         `,
         [dates.todayStart]
       );
-      
+
       const [revenueYesterday] = await pool.query(
         `SELECT COALESCE(SUM(amount), 0) as revenue
         FROM conversions
@@ -112,7 +112,7 @@ export class DashboardService {
         `,
         [dates.yesterdayStart]
       );
-      
+
       const [revenueMTD] = await pool.query(
         `SELECT 
           COALESCE(SUM(amount), 0) as revenue,
@@ -122,14 +122,14 @@ export class DashboardService {
         `,
         [dates.monthStart]
       );
-      
+
       // Calculate conversion rate
       const totalClicksToday = parseInt(clicksToday[0]?.total || 0);
       const totalConversionsToday = parseInt(conversionsToday[0]?.total || 0);
       const conversionRate = totalClicksToday > 0
         ? (totalConversionsToday / totalClicksToday) * 100
         : 0;
-      
+
       // Get offer stats
       const [offerStats] = await pool.query(
         `SELECT 
@@ -141,10 +141,10 @@ export class DashboardService {
         WHERE status != 'remove'
         `
       );
-      
+
       // Get publisher stats
       const publisherStats = await publisherService.getStats();
-      
+
       // Get advertiser stats
       const [advertiserStats] = await pool.query(
         `SELECT 
@@ -153,7 +153,7 @@ export class DashboardService {
         FROM advertisers
         `
       );
-      
+
       return {
         conversions: {
           total: parseInt(conversionsToday[0]?.total || 0),
@@ -209,16 +209,16 @@ export class DashboardService {
       const limit = parseInt(filters.limit || 5);
       const dateFrom = filters.date_from;
       const dateTo = filters.date_to;
-      
+
       // Build query conditionally based on whether dates are provided
       let dateCondition = '';
       const params = [];
-      
+
       if (dateFrom && dateTo) {
         dateCondition = 'AND DATE(conv.created_at) >= DATE(?) AND DATE(conv.created_at) <= DATE(?)';
         params.push(dateFrom, dateTo);
       }
-      
+
       const [rows] = await pool.query(
         `SELECT 
           o.id as offer_id,
@@ -235,7 +235,7 @@ export class DashboardService {
         `,
         [...params, limit]
       );
-      
+
       return rows.map(row => ({
         offer_id: row.offer_id.toString(),
         offer_name: row.offer_name,
@@ -256,7 +256,7 @@ export class DashboardService {
       })();
       const dateTo = filters.date_to || new Date().toISOString().split('T')[0];
       const groupBy = filters.group_by || 'day';
-      
+
       let dateGroup, dateSelect;
       if (groupBy === 'week') {
         dateGroup = `DATE_FORMAT(created_at, '%Y-%u')`;
@@ -268,7 +268,7 @@ export class DashboardService {
         dateGroup = `DATE(created_at)`;
         dateSelect = `DATE(created_at)`;
       }
-      
+
       // Get clicks by date
       const [clicksRows] = await pool.query(
         `SELECT 
@@ -282,7 +282,7 @@ export class DashboardService {
         `,
         [dateFrom, dateTo]
       );
-      
+
       // Get conversions by date
       const [conversionsRows] = await pool.query(
         `SELECT 
@@ -296,15 +296,15 @@ export class DashboardService {
         `,
         [dateFrom, dateTo]
       );
-      
+
       // Combine data
       const clicksMap = new Map(clicksRows.map(r => [r.date_group, parseInt(r.clicks || 0)]));
       const conversionsMap = new Map(conversionsRows.map(r => [r.date_group, parseInt(r.conversions || 0)]));
-      
+
       // Get all unique dates
       const allDates = new Set([...clicksMap.keys(), ...conversionsMap.keys()]);
       const sortedDates = Array.from(allDates).sort();
-      
+
       return sortedDates.map(dateGroup => ({
         date: dateGroup,
         clicks: clicksMap.get(dateGroup) || 0,
@@ -321,7 +321,7 @@ export class DashboardService {
       const limit = parseInt(filters.limit || 5);
       const dateFrom = filters.date_from || this.getDateBoundaries().monthStart.split(' ')[0];
       const dateTo = filters.date_to || this.getDateBoundaries().todayEnd.split('T')[0];
-      
+
       // Get top affiliates
       const [rows] = await pool.query(
         `SELECT 
@@ -340,7 +340,7 @@ export class DashboardService {
         `,
         [dateFrom, dateTo, limit]
       );
-      
+
       // Get total conversions for all affiliates
       const [totalRows] = await pool.query(
         `SELECT COUNT(DISTINCT conv.id) as total_conversions
@@ -350,7 +350,7 @@ export class DashboardService {
         `,
         [dateFrom, dateTo]
       );
-      
+
       return {
         data: rows.map(row => ({
           publisher_id: parseInt(row.publisher_id),
@@ -374,13 +374,13 @@ export class DashboardService {
         WHERE status = 'live'
         `
       );
-      
+
       // Get pending affiliates count
       const publisherStats = await publisherService.getStats();
-      
+
       // Get offer requests (placeholder - may need a separate table)
       const offerRequests = 0;
-      
+
       // Account manager info (placeholder - should come from config or admin table)
       const accountManager = {
         name: 'Sukhwinder Pal Singh',
@@ -389,10 +389,10 @@ export class DashboardService {
         email: 'manager@example.com',
         phone: '+1234567890',
       };
-      
+
       // Signup link (placeholder - should come from config)
       const signupLink = 'https://signup.example.com/affiliates-advertisers';
-      
+
       return {
         active_offers: parseInt(offerRows[0]?.count || 0),
         offer_requests: offerRequests,
@@ -412,7 +412,7 @@ export class DashboardService {
       const dateFrom = filters.date_from || this.getDateBoundaries().monthStart.split(' ')[0];
       const dateTo = filters.date_to || this.getDateBoundaries().todayEnd.split('T')[0];
       const metric = filters.metric || 'conversions';
-      
+
       // Get country stats from clicks and conversions
       const [rows] = await pool.query(
         `SELECT 
@@ -435,7 +435,7 @@ export class DashboardService {
         `,
         [dateFrom, dateTo, dateFrom, dateTo, limit]
       );
-      
+
       // Map country codes to names (simplified - should use a proper country lookup)
       const countryNameMap = {
         'US': 'United States',
@@ -454,7 +454,7 @@ export class DashboardService {
         'JP': 'Japan',
         'KR': 'South Korea',
       };
-      
+
       return rows.map(row => ({
         country_code: row.country_code || 'UN',
         country_name: countryNameMap[row.country_code] || row.country_name || row.country_code,
@@ -464,6 +464,217 @@ export class DashboardService {
       }));
     } catch (error) {
       logger.error('DashboardService.getTopCountries error:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get dashboard cards data matching the UI requirements
+   * Returns: Total Offers, Publishers, Total Clicks, Conversions, Total Revenue, Advertisers
+   */
+  async getDashboardCards() {
+    try {
+      // Get total offers count (all statuses except removed)
+      const [offerRows] = await pool.query(
+        `SELECT 
+          COUNT(*) as total,
+          SUM(CASE WHEN status = 'live' THEN 1 ELSE 0 END) as active
+        FROM offers
+        WHERE status != 'remove'
+        `
+      );
+
+      // Get publishers count
+      const [publisherRows] = await pool.query(
+        `SELECT 
+          COUNT(*) as total,
+          SUM(CASE WHEN status = 'active' THEN 1 ELSE 0 END) as active
+        FROM publishers
+        `
+      );
+
+      // Get total clicks (all time) and unique clicks
+      const [clickRows] = await pool.query(
+        `SELECT 
+          COUNT(*) as total,
+          COUNT(DISTINCT click_uuid) as unique_clicks
+        FROM clicks
+        `
+      );
+
+      // Get conversions count and approval rate
+      const [conversionRows] = await pool.query(
+        `SELECT 
+          COUNT(*) as total,
+          SUM(CASE WHEN status = 'approved' THEN 1 ELSE 0 END) as approved,
+          SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) as pending,
+          SUM(CASE WHEN status = 'rejected' THEN 1 ELSE 0 END) as rejected
+        FROM conversions
+        `
+      );
+
+      // Calculate approval rate
+      const totalConversions = parseInt(conversionRows[0]?.total || 0);
+      const approvedConversions = parseInt(conversionRows[0]?.approved || 0);
+      const approvalRate = totalConversions > 0
+        ? ((approvedConversions / totalConversions) * 100).toFixed(2)
+        : '0.00';
+
+      // Get total revenue (from approved conversions)
+      const [revenueRows] = await pool.query(
+        `SELECT 
+          COALESCE(SUM(amount), 0) as total_revenue,
+          COALESCE(SUM(payout), 0) as total_payout
+        FROM conversions
+        WHERE status = 'approved'
+        `
+      );
+
+      // Calculate revenue change (compare today vs yesterday)
+      const dates = this.getDateBoundaries();
+      const [revenueTodayRows] = await pool.query(
+        `SELECT COALESCE(SUM(amount), 0) as revenue
+        FROM conversions
+        WHERE DATE(created_at) = DATE(?)
+        AND status = 'approved'
+        `,
+        [dates.todayStart]
+      );
+
+      const [revenueYesterdayRows] = await pool.query(
+        `SELECT COALESCE(SUM(amount), 0) as revenue
+        FROM conversions
+        WHERE DATE(created_at) = DATE(?)
+        AND status = 'approved'
+        `,
+        [dates.yesterdayStart]
+      );
+
+      const revenueToday = parseFloat(revenueTodayRows[0]?.revenue || 0);
+      const revenueYesterday = parseFloat(revenueYesterdayRows[0]?.revenue || 0);
+      const revenueChange = revenueToday - revenueYesterday;
+
+      // Get advertisers count
+      const [advertiserRows] = await pool.query(
+        `SELECT 
+          COUNT(*) as total,
+          SUM(CASE WHEN status = 'active' THEN 1 ELSE 0 END) as active
+        FROM advertisers
+        `
+      );
+
+      return {
+        offers: {
+          total: parseInt(offerRows[0]?.total || 0),
+          active: parseInt(offerRows[0]?.active || 0),
+          label: 'TOTAL OFFERS',
+          status_label: 'Active'
+        },
+        publishers: {
+          total: parseInt(publisherRows[0]?.total || 0),
+          active: parseInt(publisherRows[0]?.active || 0),
+          label: 'PUBLISHERS',
+          status_label: 'Active'
+        },
+        clicks: {
+          total: parseInt(clickRows[0]?.total || 0),
+          unique: parseInt(clickRows[0]?.unique_clicks || 0),
+          label: 'TOTAL CLICKS',
+          status_label: 'Unique'
+        },
+        conversions: {
+          total: totalConversions,
+          approved: approvedConversions,
+          pending: parseInt(conversionRows[0]?.pending || 0),
+          rejected: parseInt(conversionRows[0]?.rejected || 0),
+          approval_rate: `${approvalRate}%`,
+          label: 'CONVERSIONS',
+          status_label: `Approved +${approvalRate}%`
+        },
+        revenue: {
+          total: parseFloat(revenueRows[0]?.total_revenue || 0).toFixed(2),
+          payout: parseFloat(revenueRows[0]?.total_payout || 0).toFixed(2),
+          profit: (parseFloat(revenueRows[0]?.total_revenue || 0) - parseFloat(revenueRows[0]?.total_payout || 0)).toFixed(2),
+          today: revenueToday.toFixed(2),
+          yesterday: revenueYesterday.toFixed(2),
+          change: revenueChange.toFixed(2),
+          label: 'TOTAL REVENUE',
+          status_label: `Up $${revenueChange.toFixed(2)}`
+        },
+        advertisers: {
+          total: parseInt(advertiserRows[0]?.total || 0),
+          active: parseInt(advertiserRows[0]?.active || 0),
+          label: 'ADVERTISERS',
+          status_label: 'Active'
+        }
+      };
+    } catch (error) {
+      logger.error('DashboardService.getDashboardCards error:', error);
+      throw error;
+    }
+  }
+  async getLiveOffers(limit = 5) {
+    try {
+      const [rows] = await pool.query(
+        `SELECT 
+          id,
+          name,
+          category,
+          thumbnail_url,
+          payout,
+          created_at
+        FROM offers
+        WHERE status = 'live'
+        ORDER BY created_at DESC
+        LIMIT ?`,
+        [parseInt(limit)]
+      );
+
+      return rows;
+    } catch (error) {
+      logger.error('DashboardService.getLiveOffers error:', error);
+      throw error;
+    }
+  }
+
+  async getRecentActivity(limit = 5) {
+    try {
+      // Get recent unique clicks with their conversion status
+      const [rows] = await pool.query(
+        `SELECT 
+          c.id as click_id,
+          c.created_at,
+          o.name as offer_name,
+          o.thumbnail_url as offer_thumbnail,
+          p.company_name as publisher_name,
+          p.first_name,
+          p.last_name,
+          conv.status as conversion_status,
+          COALESCE(conv.amount, 0) as revenue
+        FROM clicks c
+        LEFT JOIN offers o ON c.offer_id = o.id
+        LEFT JOIN publishers p ON c.publisher_id = p.id
+        LEFT JOIN conversions conv ON conv.click_uuid = c.click_uuid
+        ORDER BY c.created_at DESC
+        LIMIT ?`,
+        [parseInt(limit)]
+      );
+
+      return rows.map(row => ({
+        id: row.click_id,
+        time: row.created_at,
+        offer: {
+          name: row.offer_name,
+          thumbnail: row.offer_thumbnail
+        },
+        publisher: row.publisher_name || `${row.first_name || ''} ${row.last_name || ''}`.trim() || 'Unknown',
+        clicks: 1, // Individual log entry represents 1 click
+        converted: !!row.conversion_status,
+        conversion_status: row.conversion_status || 'No',
+        revenue: parseFloat(row.revenue).toFixed(2)
+      }));
+    } catch (error) {
+      logger.error('DashboardService.getRecentActivity error:', error);
       throw error;
     }
   }

@@ -105,6 +105,15 @@ class OfferController {
       return reply.code(status).send(buildError(error.message || 'Failed to update assignment', status));
     }
   }
+  async getofferDetail(request,reply){
+    try {
+      const assignment = await offerService.geteditOffer(request.params.id)
+      return reply.send(buildSuccess(assignment))
+    } catch (error) {
+      logger.error('OfferController.getofferDetail error:', error);
+      return reply.code(500).send(buildError('Failed to get offer detail'));
+    }
+  }
 }
 
 export default new OfferController();

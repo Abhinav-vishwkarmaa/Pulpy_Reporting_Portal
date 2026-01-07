@@ -23,7 +23,7 @@ export class DashboardController {
         date_from: request.query.date_from,
         date_to: request.query.date_to,
       };
-      
+
       const data = await dashboardService.getTopOffers(filters);
       return reply.send({
         success: true,
@@ -42,7 +42,7 @@ export class DashboardController {
         date_to: request.query.date_to,
         group_by: request.query.group_by,
       };
-      
+
       const data = await dashboardService.getPerformanceChart(filters);
       return reply.send({
         success: true,
@@ -61,7 +61,7 @@ export class DashboardController {
         date_from: request.query.date_from,
         date_to: request.query.date_to,
       };
-      
+
       const result = await dashboardService.getTopAffiliates(filters);
       return reply.send({
         success: true,
@@ -94,7 +94,7 @@ export class DashboardController {
         date_to: request.query.date_to,
         metric: request.query.metric,
       };
-      
+
       const data = await dashboardService.getTopCountries(filters);
       return reply.send({
         success: true,
@@ -102,6 +102,47 @@ export class DashboardController {
       });
     } catch (error) {
       logger.error('DashboardController.getTopCountries error:', error);
+      return reply.code(500).send(createErrorResponse(error, 500));
+    }
+  }
+
+  async getDashboardCards(request, reply) {
+    try {
+      const data = await dashboardService.getDashboardCards();
+      return reply.send({
+        success: true,
+        data,
+      });
+    } catch (error) {
+      logger.error('DashboardController.getDashboardCards error:', error);
+      return reply.code(500).send(createErrorResponse(error, 500));
+    }
+  }
+
+  async getLiveOffers(request, reply) {
+    try {
+      const limit = request.query.limit || 5;
+      const data = await dashboardService.getLiveOffers(limit);
+      return reply.send({
+        success: true,
+        data,
+      });
+    } catch (error) {
+      logger.error('DashboardController.getLiveOffers error:', error);
+      return reply.code(500).send(createErrorResponse(error, 500));
+    }
+  }
+
+  async getRecentActivity(request, reply) {
+    try {
+      const limit = request.query.limit || 10;
+      const data = await dashboardService.getRecentActivity(limit);
+      return reply.send({
+        success: true,
+        data,
+      });
+    } catch (error) {
+      logger.error('DashboardController.getRecentActivity error:', error);
       return reply.code(500).send(createErrorResponse(error, 500));
     }
   }

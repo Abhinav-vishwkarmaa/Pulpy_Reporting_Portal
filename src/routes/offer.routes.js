@@ -23,6 +23,17 @@ async function offerRoutes(fastify) {
     offerController.createOffer
   );
 
+  fastify.get(
+    '/api/admin/offers/:id/edit',
+    {
+      preHandler: authenticateAdmin,
+      schema: {
+        params: offerIdParamSchema,
+      },
+    },
+    offerController.getofferDetail
+  );
+
   fastify.patch(
     '/api/admin/offers/:id',
     {

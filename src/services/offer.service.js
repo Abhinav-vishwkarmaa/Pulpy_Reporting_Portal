@@ -777,6 +777,19 @@ class OfferService {
       assigned_at: assignment.assigned_at,
     };
   }
+  async geteditOffer(id){
+    const [rows] = await pool.query(
+      `SELECT *
+       FROM offers
+       WHERE id = ?
+       LIMIT 1`,
+      [id]
+    );
+    if (!rows || rows.length === 0) {
+      return null;
+    }
+    return rows[0];
+  }
 }
 
 export default new OfferService();
