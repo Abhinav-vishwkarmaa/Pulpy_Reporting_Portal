@@ -46,7 +46,7 @@ class OfferService {
     if (offer.end_date) {
       const endDate = new Date(offer.end_date);
       endDate.setHours(23, 59, 59, 999); // End of day
-      
+
       if (now > endDate) {
         return {
           valid: false,
@@ -60,7 +60,7 @@ class OfferService {
     if (offer.start_date) {
       const startDate = new Date(offer.start_date);
       startDate.setHours(0, 0, 0, 0); // Start of day
-      
+
       if (now < startDate) {
         return {
           valid: false,
@@ -91,7 +91,7 @@ class OfferService {
     if (endDate) {
       const endDateObj = new Date(endDate);
       endDateObj.setHours(23, 59, 59, 999); // End of day
-      
+
       if (now > endDateObj) {
         return {
           valid: false,
@@ -106,7 +106,7 @@ class OfferService {
     if (status === 'live' && endDate) {
       const endDateObj = new Date(endDate);
       endDateObj.setHours(23, 59, 59, 999);
-      
+
       if (now > endDateObj) {
         return {
           valid: false,
@@ -457,20 +457,17 @@ class OfferService {
       // Get statistics
       const [statsRows] = await pool.query(
         `SELECT 
-          COUNT(DISTINCT c.id) as total_clicks,
-          COUNT(DISTINCT c.publisher_id) as unique_publishers,
-          COUNT(DISTINCT i.id) as total_impressions,
-          COUNT(DISTINCT conv.id) as total_conversions,
-          COUNT(DISTINCT CASE WHEN conv.status = 'approved' THEN conv.id END) as approved_conversions,
-          COUNT(DISTINCT CASE WHEN conv.status = 'pending' THEN conv.id END) as pending_conversions,
-          COUNT(DISTINCT CASE WHEN conv.status = 'rejected' THEN conv.id END) as rejected_conversions,
-          COALESCE(SUM(conv.amount), 0) as total_revenue,
-          COALESCE(SUM(conv.payout), 0) as total_payout,
-          COALESCE(SUM(conv.amount - conv.payout), 0) as total_profit
+          (SELECT COUNT(*) FROM clicks WHERE offer_id = o.id) as total_clicks,
+          (SELECT COUNT(DISTINCT publisher_id) FROM clicks WHERE offer_id = o.id) as unique_publishers,
+          (SELECT COUNT(*) FROM impressions WHERE offer_id = o.id) as total_impressions,
+          (SELECT COUNT(*) FROM conversions WHERE offer_id = o.id) as total_conversions,
+          (SELECT COUNT(*) FROM conversions WHERE offer_id = o.id AND status = 'approved') as approved_conversions,
+          (SELECT COUNT(*) FROM conversions WHERE offer_id = o.id AND status = 'pending') as pending_conversions,
+          (SELECT COUNT(*) FROM conversions WHERE offer_id = o.id AND status = 'rejected') as rejected_conversions,
+          (SELECT COALESCE(SUM(amount), 0) FROM conversions WHERE offer_id = o.id) as total_revenue,
+          (SELECT COALESCE(SUM(payout), 0) FROM conversions WHERE offer_id = o.id) as total_payout,
+          (SELECT COALESCE(SUM(amount - payout), 0) FROM conversions WHERE offer_id = o.id) as total_profit
         FROM offers o
-        LEFT JOIN clicks c ON c.offer_id = o.id
-        LEFT JOIN impressions i ON i.offer_id = o.id
-        LEFT JOIN conversions conv ON conv.offer_id = o.id
         WHERE o.id = ?`,
         [id]
       );
@@ -778,7 +775,7 @@ class OfferService {
       assigned_at: assignment.assigned_at,
     };
   }
-  async geteditOffer(id){
+  async geteditOffer(id) {
     const [rows] = await pool.query(
       `SELECT *
        FROM offers

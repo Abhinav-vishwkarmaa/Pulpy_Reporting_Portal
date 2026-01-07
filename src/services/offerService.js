@@ -10,7 +10,7 @@ export class OfferService {
       // Ensure nullable dates have safe defaults for MySQL
       const startAt = data.start_at || new Date();
       const endAt = data.end_at || null;
-      
+
       const [result] = await pool.query(
         `INSERT INTO offers (
           name, category, advertiser_revenue, affiliate_model_cost,
@@ -32,7 +32,7 @@ export class OfferService {
           urlKey,
         ]
       );
-      
+
       const insertId = result.insertId || result[0]?.insertId;
       const [rows] = await pool.query('SELECT * FROM offers WHERE id = ?', [insertId]);
       return Array.isArray(rows) ? rows[0] : rows;
@@ -41,14 +41,14 @@ export class OfferService {
       throw error;
     }
   }
-  
+
   generateUrlKey(name) {
     // Generate a short unique key from name
     const base = name.toLowerCase().replace(/[^a-z0-9]/g, '').substring(0, 20);
     const unique = uuidv4().substring(0, 8);
     return `${base}-${unique}`;
   }
-  
+
   async findById(id) {
     const [rows] = await pool.query('SELECT * FROM offers WHERE id = ?', [id]);
     return Array.isArray(rows) ? rows[0] : rows;
@@ -86,7 +86,7 @@ export class OfferService {
     if (offer.end_date) {
       const endDate = new Date(offer.end_date);
       endDate.setHours(23, 59, 59, 999); // End of day
-      
+
       if (now > endDate) {
         return {
           valid: false,
@@ -100,7 +100,7 @@ export class OfferService {
     if (offer.start_date) {
       const startDate = new Date(offer.start_date);
       startDate.setHours(0, 0, 0, 0); // Start of day
-      
+
       if (now < startDate) {
         return {
           valid: false,
@@ -211,20 +211,17 @@ export class OfferService {
       // Get statistics
       const [statsRows] = await pool.query(
         `SELECT 
-          COUNT(DISTINCT c.id) as total_clicks,
-          COUNT(DISTINCT c.publisher_id) as unique_publishers,
-          COUNT(DISTINCT i.id) as total_impressions,
-          COUNT(DISTINCT conv.id) as total_conversions,
-          COUNT(DISTINCT CASE WHEN conv.status = 'approved' THEN conv.id END) as approved_conversions,
-          COUNT(DISTINCT CASE WHEN conv.status = 'pending' THEN conv.id END) as pending_conversions,
-          COUNT(DISTINCT CASE WHEN conv.status = 'rejected' THEN conv.id END) as rejected_conversions,
-          COALESCE(SUM(conv.amount), 0) as total_revenue,
-          COALESCE(SUM(conv.payout), 0) as total_payout,
-          COALESCE(SUM(conv.amount - conv.payout), 0) as total_profit
+          (SELECT COUNT(*) FROM clicks WHERE offer_id = o.id) as total_clicks,
+          (SELECT COUNT(DISTINCT publisher_id) FROM clicks WHERE offer_id = o.id) as unique_publishers,
+          (SELECT COUNT(*) FROM impressions WHERE offer_id = o.id) as total_impressions,
+          (SELECT COUNT(*) FROM conversions WHERE offer_id = o.id) as total_conversions,
+          (SELECT COUNT(*) FROM conversions WHERE offer_id = o.id AND status = 'approved') as approved_conversions,
+          (SELECT COUNT(*) FROM conversions WHERE offer_id = o.id AND status = 'pending') as pending_conversions,
+          (SELECT COUNT(*) FROM conversions WHERE offer_id = o.id AND status = 'rejected') as rejected_conversions,
+          (SELECT COALESCE(SUM(amount), 0) FROM conversions WHERE offer_id = o.id) as total_revenue,
+          (SELECT COALESCE(SUM(payout), 0) FROM conversions WHERE offer_id = o.id) as total_payout,
+          (SELECT COALESCE(SUM(amount - payout), 0) FROM conversions WHERE offer_id = o.id) as total_profit
         FROM offers o
-        LEFT JOIN clicks c ON c.offer_id = o.id
-        LEFT JOIN impressions i ON i.offer_id = o.id
-        LEFT JOIN conversions conv ON conv.offer_id = o.id
         WHERE o.id = ?`,
         [id]
       );
@@ -311,48 +308,48 @@ export class OfferService {
       throw error;
     }
   }
-  
+
   async findByUrlKey(urlKey) {
     const [rows] = await pool.query('SELECT * FROM offers WHERE url_key = ?', [urlKey]);
     return Array.isArray(rows) ? rows[0] : rows;
   }
-  
+
   async findAll(filters = {}) {
     let query = 'SELECT * FROM offers WHERE 1=1';
     const params = [];
-    
+
     if (filters.status) {
       query += ' AND status = ?';
       params.push(filters.status);
     }
-    
+
     if (filters.category) {
       query += ' AND category = ?';
       params.push(filters.category);
     }
-    
+
     if (filters.live) {
       query += ` AND status = 'active' AND (start_at IS NULL OR start_at <= CURRENT_TIMESTAMP) AND (end_at IS NULL OR end_at >= CURRENT_TIMESTAMP)`;
     }
-    
+
     query += ' ORDER BY created_at DESC';
-    
+
     const [rows] = await pool.query(query, params);
     return rows;
   }
-  
+
   async getLive() {
     return this.findAll({ live: true });
   }
-  
+
   async getApproved() {
     return this.findAll({ status: 'active' });
   }
-  
+
   async getAll() {
     return this.findAll();
   }
-  
+
   async getCategories() {
     const [rows] = await pool.query(`
       SELECT category, COUNT(*) as count
@@ -362,7 +359,7 @@ export class OfferService {
     `);
     return rows;
   }
-  
+
   async updateStatus(id, status) {
     await pool.query(
       'UPDATE offers SET status = ?, updated_at = NOW() WHERE id = ?',
@@ -370,33 +367,33 @@ export class OfferService {
     );
     return this.findById(id);
   }
-  
+
   async update(id, data) {
     const fields = [];
     const params = [];
-    
+
     Object.keys(data).forEach((key) => {
       if (data[key] !== undefined && key !== 'id') {
         fields.push(`${key} = ?`);
         params.push(data[key]);
       }
     });
-    
+
     if (fields.length === 0) {
       return this.findById(id);
     }
-    
+
     fields.push(`updated_at = NOW()`);
     params.push(id);
-    
+
     const query = `UPDATE offers SET ${fields.join(', ')} WHERE id = ?`;
     await pool.query(query, params);
     return this.findById(id);
   }
-  
+
   async checkCapping(offerId, publisherId, publisherOfferId = null) {
     const today = new Date().toISOString().split('T')[0];
-    
+
     // Get cap limit
     let capLimit = null;
     if (publisherOfferId) {
@@ -409,7 +406,7 @@ export class OfferService {
         capLimit = assignment.cap_override;
       }
     }
-    
+
     if (!capLimit) {
       const [offerRows] = await pool.query(
         'SELECT capping_per_day FROM offers WHERE id = ?',
@@ -418,11 +415,11 @@ export class OfferService {
       const offer = Array.isArray(offerRows) ? offerRows[0] : offerRows;
       capLimit = offer?.capping_per_day || 0;
     }
-    
+
     if (capLimit === 0) {
       return { capped: false, count: 0, limit: 0 };
     }
-    
+
     // Count clicks today
     const [countRows] = await pool.query(
       `SELECT COUNT(*) as count
@@ -432,16 +429,16 @@ export class OfferService {
          AND DATE(created_at) = ?`,
       [offerId, publisherId, today]
     );
-    
+
     const count = parseInt((Array.isArray(countRows) ? countRows[0] : countRows).count || 0);
-    
+
     return {
       capped: count >= capLimit,
       count,
       limit: capLimit,
     };
   }
-  
+
   async getStats() {
     const [rows] = await pool.query(`
       SELECT 
