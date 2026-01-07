@@ -561,10 +561,11 @@ class OfferService {
   async listOffers(filters = {}) {
     const conditions = [];
     const params = [];
+    console.log('FILTERS RECEIVED:', filters);
 
-    if (filters.status) {
+    if (filters.type) {
       conditions.push('status = ?');
-      params.push(filters.status);
+      params.push(filters.type);
     }
 
     if (filters.advertiser_id) {
