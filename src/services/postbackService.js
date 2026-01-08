@@ -21,11 +21,24 @@ export class PostbackService {
       // Find click if click_id provided
       let click = null;
       if (click_id) {
-        const [clickRows] = await pool.query(
-          'SELECT * FROM clicks WHERE click_uuid = ?',
-          [click_id]
-        );
-        click = Array.isArray(clickRows) ? clickRows[0] : clickRows;
+        // RETRY LOGIC: Handle async queue lag (race condition)
+        // If postback arrives before click insert commit, retry a few times.
+        let attempts = 0;
+        while (attempts < 5) {
+          const [clickRows] = await pool.query(
+            'SELECT * FROM clicks WHERE click_uuid = ?',
+            [click_id]
+          );
+          click = Array.isArray(clickRows) ? clickRows[0] : clickRows;
+
+          if (click) break; // Found it!
+
+          // Wait 200ms before retry
+          attempts++;
+          if (attempts < 5) {
+            await new Promise(resolve => setTimeout(resolve, 200));
+          }
+        }
 
         if (!click) {
           throw new Error('Click not found');

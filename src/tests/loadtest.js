@@ -5,10 +5,10 @@ import { uuidv4 } from 'https://jslib.k6.io/k6-utils/1.4.0/index.js';
 // Configuration
 export const options = {
     stages: [
-        { duration: '10s', target: 30 },   // warm-up
-        { duration: '10s', target: 75 },   // ramp
-        { duration: '20s', target: 150 },  // high concurrency
-        { duration: '10s', target: 0 },    // ramp down
+        { duration: '10s', target: 130 },   // warm-up
+        { duration: '10s', target: 175 },   // ramp
+        { duration: '20s', target: 500 },  // high concurrency
+        { duration: '10s', target: 19 },    // ramp down
     ],
     thresholds: {
         http_req_duration: ['p(95)<500'],
