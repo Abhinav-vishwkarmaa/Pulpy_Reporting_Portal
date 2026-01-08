@@ -30,6 +30,19 @@ export class PostbackController {
         timestamp: new Date().toISOString(),
       });
     } catch (error) {
+      if (error.code === 'RETRY_LATER') {
+        const retrySeconds = 60;
+        return reply
+          .code(429)
+          .header('Retry-After', retrySeconds)
+          .send({
+            success: false,
+            error: 'Too Many Requests',
+            message: error.message,
+            retry_after: retrySeconds
+          });
+      }
+
       logger.error('PostbackController.handlePostback error:', error);
       return reply.code(400).send(createErrorResponse(error, 400));
     }
