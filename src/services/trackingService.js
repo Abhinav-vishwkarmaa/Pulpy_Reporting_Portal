@@ -148,6 +148,36 @@ export class TrackingService {
       const domain = extractDomain(referrer);
 
       // ============================================
+      // INTENT-BASED DEDUPLICATION
+      // ============================================
+      // Prevent duplicate clicks from same user (browser retry/prefetch) within short window
+      if (!global.clickDedupeCache) global.clickDedupeCache = new Map();
+
+      // Cleanup cache periodically (simple naive cleanup for Map)
+      if (Math.random() < 0.01) { // 1% chance to run cleanup
+        const now = Date.now();
+        for (const [key, val] of global.clickDedupeCache.entries()) {
+          if (now > val.expiry) global.clickDedupeCache.delete(key);
+        }
+      }
+
+      const dedupeKey = `click:${ip}:${userAgent}:${offerId}`;
+      const cachedClick = global.clickDedupeCache.get(dedupeKey);
+
+      if (cachedClick && Date.now() < cachedClick.expiry) {
+        logger.info('Duplicate GET request suppressed (Dedupe)', { key: dedupeKey });
+        return {
+          redirect: cachedClick.redirectUrl,
+          clickId: cachedClick.clickId, // Return original click ID (or null if we want to hide it)
+          duplicate: true
+        };
+      }
+
+      // Store result in cache AFTER generating redirect (see end of function)
+      // We will define a helper to Update Cache later
+
+
+      // ============================================
       // CRITICAL: Generate click_id BEFORE database insert and redirect
       // ============================================
       // This ensures:
@@ -285,6 +315,15 @@ export class TrackingService {
       // Also trigger daily stats update in background (fire-and-forget)
       // UPDATED: Now handled by the worker queue to respect concurrency.
       // this.updateDailyStats(offerId, publisherId, 'click').catch(err => logger.error('Async stats update failed:', err));
+
+      // Cache the result for deduplication (3 seconds TTL)
+      if (global.clickDedupeCache) {
+        global.clickDedupeCache.set(dedupeKey, {
+          redirectUrl: redirectUrl,
+          clickId: clickUuid,
+          expiry: Date.now() + 3000 // 3 seconds
+        });
+      }
 
       return {
         redirect: redirectUrl,
