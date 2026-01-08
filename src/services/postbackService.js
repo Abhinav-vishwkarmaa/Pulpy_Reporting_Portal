@@ -9,6 +9,8 @@ import { replaceMacros } from '../utils/urlGenerator.js';
 import https from 'https';
 import http from 'http';
 
+import { clickQueue } from '../workers/clickQueue.js';
+
 export class PostbackService {
   async processPostback(query, request) {
     try {
@@ -41,6 +43,19 @@ export class PostbackService {
         }
 
         if (!click) {
+          // SMART RETRY Check:
+          // If the worker queue is busy, the click might still be in the queue.
+          // Throw a special error that the controller can interpret as a 429 (Retry Later).
+          // fastq exposes .length() (pending) and .running() (active workers)
+
+          const queueLoad = clickQueue.length() + clickQueue.running();
+
+          if (queueLoad > 0) {
+            const error = new Error('System busy, click potentially pending processing');
+            error.code = 'RETRY_LATER'; // Custom code for controller to catch
+            throw error;
+          }
+
           throw new Error('Click not found');
         }
       }
