@@ -9,7 +9,7 @@ const dbConfig = {
   user: process.env.DB_USER || 'root',
   password: process.env.DB_PASSWORD ? '***' : '***', // Hide password in logs
   waitForConnections: true,
-  connectionLimit: 20,
+  connectionLimit: 15,
   queueLimit: 0,
   enableKeepAlive: true,
   keepAliveInitialDelay: 0,
@@ -37,7 +37,7 @@ const pool = mysql.createPool({
   user: process.env.DB_USER || 'root',
   password: process.env.DB_PASSWORD || '',
   waitForConnections: true,
-  connectionLimit: 20,
+  connectionLimit: 15,
   queueLimit: 0,
   enableKeepAlive: true,
   keepAliveInitialDelay: 0,
@@ -69,7 +69,7 @@ pool.query('SELECT NOW() as server_time, VERSION() as mysql_version')
     const result = Array.isArray(rows) ? rows[0] : rows;
     const serverTime = result?.server_time;
     const mysqlVersion = result?.mysql_version || 'Unknown';
-    
+
     console.log('   ┌─ Connection Test ────────────────────────────────────────────────────');
     console.log('   │ Status: ✅ SUCCESS');
     console.log(`   │ Duration: ${connectionDuration}ms`);
@@ -81,13 +81,13 @@ pool.query('SELECT NOW() as server_time, VERSION() as mysql_version')
   })
   .catch((err) => {
     const connectionDuration = Date.now() - connectionStartTime;
-    
+
     console.log('   ┌─ Connection Test ────────────────────────────────────────────────────');
     console.error('   │ Status: ❌ FAILED');
     console.error(`   │ Duration: ${connectionDuration}ms`);
     console.error(`   │ Error Message: ${err.message}`);
     console.error(`   │ Error Code: ${err.code || 'N/A'}`);
-    
+
     if (err.code === 'ECONNREFUSED') {
       console.error('   │');
       console.error('   │ 💡 Troubleshooting:');
@@ -107,7 +107,7 @@ pool.query('SELECT NOW() as server_time, VERSION() as mysql_version')
       console.error('   │   2. Create database: CREATE DATABASE pulpy_reporting;');
       console.error('   │   3. Run migrations: npm run migrate');
     }
-    
+
     console.error('   │');
     console.error('   │ ⚠️  Server will start, but database operations may fail.');
     console.error('   └────────────────────────────────────────────────────────────────────');

@@ -10,8 +10,17 @@ import offerService from './offerService.js';
 import publisherService from './publisherService.js';
 import assignmentService from './assignmentService.js';
 
+import { clickQueue, isOverloaded } from '../workers/clickQueue.js';
+
 export class TrackingService {
   async trackClick(query, request) {
+    // 1. Fail early if system is overloaded (Backpressure)
+    if (isOverloaded()) {
+      const error = new Error('System overloaded');
+      error.statusCode = 429;
+      throw error;
+    }
+
     try {
       // Support both standard and alternative parameter names
       // Standard: offer_id, pub_id
@@ -29,14 +38,30 @@ export class TrackingService {
         resolved_publisher_id: publisherId
       });
 
-      // Validate offer
-      const offer = await offerService.findById(offerId);
+      // CACHE: Simple in-memory cache to prevent DB read exhaustion
+      const CACHE_TTL = 60000; // 60 seconds
+      if (!global.trackingCache) global.trackingCache = new Map();
+
+      const getCached = async (key, fetcher) => {
+        const cached = global.trackingCache.get(key);
+        if (cached && (Date.now() - cached.timestamp < CACHE_TTL)) {
+          return cached.data;
+        }
+        const data = await fetcher();
+        if (data) global.trackingCache.set(key, { data, timestamp: Date.now() });
+        return data;
+      };
+
+      // Parallelize independent lookups with Cache
+      const [offer, publisher] = await Promise.all([
+        getCached(`offer:${offerId}`, () => offerService.findById(offerId)),
+        getCached(`pub:${publisherId}`, () => publisherService.findById(publisherId))
+      ]);
+
       if (!offer) {
         throw new Error('Offer not found');
       }
 
-      // Validate publisher
-      const publisher = await publisherService.findById(publisherId);
       if (!publisher) {
         throw new Error('Publisher not found');
       }
@@ -56,7 +81,7 @@ export class TrackingService {
         throw new Error('Assignment not found or inactive');
       }
 
-      // Apply status and capping checks before recording click
+      // Apply status and capping checks
       let fallbackRedirect = await this.getFallbackRedirect(offer);
       // Provide default fallback if none is configured (prevents redirecting to invalid offer URLs)
       if (!fallbackRedirect) {
@@ -151,9 +176,73 @@ export class TrackingService {
         affiliateClickId !== '<CLICK_ID>'
       ) ? affiliateClickId : (query.tid || null);
 
-      // Insert click with newly generated click_uuid
-      const [clickResult] = await pool.query(
-        `INSERT INTO clicks (
+      // ============================================
+      // ASYNC: Push click insert to background queue
+      // ============================================
+
+      // ============================================
+      // RESTORED LOGIC: Calculate Redirect URL
+      // ============================================
+
+      // Re-validate offer before determining redirect URL
+      const offerValidationCheck = offerService.checkOfferValidity(offer);
+      if (!offerValidationCheck.valid) {
+        logger.warn('Click redirect blocked - Offer validation failed before URL determination:', {
+          offer_id: offerId,
+          publisher_id: publisherId,
+          reason: offerValidationCheck.message,
+          error_type: offerValidationCheck.error_type
+        });
+        return {
+          html: generateOfferErrorPage(offerValidationCheck.message, offerValidationCheck.error_type),
+          clickId: clickUuid,
+          error: offerValidationCheck.message,
+          error_type: offerValidationCheck.error_type
+        };
+      }
+
+      // Determine redirect URL using priority: assignment.destination_url OR offer.offer_url
+      let redirectUrl = assignment.destination_url || offer.offer_url;
+
+      if (offer.status === 'deactivate') {
+        redirectUrl = offer.fallback_url || redirectUrl;
+      }
+
+      if (!redirectUrl) {
+        throw new Error('No destination URL available for redirect');
+      }
+
+      // Replace macros in URL ({click_id}, {rcid}, {tid})
+      redirectUrl = replaceMacros(redirectUrl, {
+        click_id: clickUuid,
+        rcid: query.rcid || '',
+        tid: query.tid || '',
+      });
+
+      // Append click parameters as query string
+      redirectUrl = appendClickParams(redirectUrl, {
+        click_id: clickUuid,
+        tid: query.tid || null,
+        rcid: query.rcid || null,
+        source_id: query.source_id || null,
+        device_id: query.device_id || null,
+        google_id: query.google_id || null,
+        android_id: query.android_id || null,
+      });
+
+      // Final validation check
+      const finalValidation = offerService.checkOfferValidity(offer);
+      if (!finalValidation.valid) {
+        return {
+          html: generateOfferErrorPage(finalValidation.message, finalValidation.error_type),
+          clickId: clickUuid,
+          error: finalValidation.message,
+          error_type: finalValidation.error_type
+        };
+      }
+
+      const clickTask = {
+        sql: `INSERT INTO clicks (
           click_uuid, offer_id, publisher_id, publisher_offer_id,
           ip, user_agent, referrer, country, domain,
           device_type, browser, os, os_version, device_brand, device_model,
@@ -162,7 +251,7 @@ export class TrackingService {
         ) VALUES (
           ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW()
         )`,
-        [
+        params: [
           clickUuid,
           offerId,
           publisherId,
@@ -184,89 +273,22 @@ export class TrackingService {
           query.android_id || null,
           query.rcid || null,
           tid, // Storing affiliate's click_id here
-        ]
-      );
+        ],
+        type: 'insert_click',
+        data: { offerId, publisherId }, // Pass data for worker to update stats
+        startTime: Date.now()
+      };
 
+      // Push to queue (non-blocking)
+      clickQueue.push(clickTask);
 
-      const clickId = clickResult.insertId || clickResult[0]?.insertId;
-      const [clickRows] = await pool.query('SELECT id, click_uuid FROM clicks WHERE id = ?', [clickId]);
-      const click = Array.isArray(clickRows) ? clickRows[0] : clickRows;
-
-      // Re-validate offer before determining redirect URL
-      // Never use offer.offer_url if offer is expired or not live
-      const offerValidationCheck = offerService.checkOfferValidity(offer);
-      if (!offerValidationCheck.valid) {
-        logger.warn('Click redirect blocked - Offer validation failed before URL determination:', {
-          offer_id: offerId,
-          publisher_id: publisherId,
-          reason: offerValidationCheck.message,
-          error_type: offerValidationCheck.error_type
-        });
-        // Return HTML error page instead of redirecting
-        return {
-          html: generateOfferErrorPage(offerValidationCheck.message, offerValidationCheck.error_type),
-          clickId: click.click_uuid,
-          error: offerValidationCheck.message,
-          error_type: offerValidationCheck.error_type
-        };
-      }
-
-      // Only use offer URLs if offer is valid
-      // Determine redirect URL using priority: assignment.destination_url OR offer.offer_url
-      // assignment.destination_url is an override, offer.offer_url is the default
-      let redirectUrl = assignment.destination_url || offer.offer_url;
-
-      if (offer.status === 'deactivate') {
-        redirectUrl = offer.fallback_url || redirectUrl;
-      }
-
-      if (!redirectUrl) {
-        throw new Error('No destination URL available for redirect');
-      }
-
-      // Replace macros in URL ({click_id}, {rcid}, {tid})
-      redirectUrl = replaceMacros(redirectUrl, {
-        click_id: click.click_uuid,
-        rcid: query.rcid || '',
-        tid: query.tid || '',
-      });
-
-      // Append click parameters as query string (if not already in URL via macros)
-      redirectUrl = appendClickParams(redirectUrl, {
-        click_id: click.click_uuid,
-        tid: query.tid || null,
-        rcid: query.rcid || null,
-        source_id: query.source_id || null,
-        device_id: query.device_id || null,
-        google_id: query.google_id || null,
-        android_id: query.android_id || null,
-      });
-
-      // Final validation check: Ensure offer is still valid before redirecting
-      // This prevents redirecting to expired or non-live offers
-      const finalValidation = offerService.checkOfferValidity(offer);
-      if (!finalValidation.valid) {
-        logger.warn('Click redirect blocked - Offer validation failed at final check:', {
-          offer_id: offerId,
-          publisher_id: publisherId,
-          reason: finalValidation.message,
-          error_type: finalValidation.error_type
-        });
-        // Return HTML error page instead of redirecting
-        return {
-          html: generateOfferErrorPage(finalValidation.message, finalValidation.error_type),
-          clickId: click.click_uuid,
-          error: finalValidation.message,
-          error_type: finalValidation.error_type
-        };
-      }
-
-      // Update daily stats
-      await this.updateDailyStats(offerId, publisherId, 'click');
+      // Also trigger daily stats update in background (fire-and-forget)
+      // UPDATED: Now handled by the worker queue to respect concurrency.
+      // this.updateDailyStats(offerId, publisherId, 'click').catch(err => logger.error('Async stats update failed:', err));
 
       return {
         redirect: redirectUrl,
-        clickId: click.click_uuid,
+        clickId: clickUuid, // Use the generated UUID, we don't need the DB ID anymore for return
       };
     } catch (error) {
       logger.error('TrackingService.trackClick error:', error);
@@ -289,7 +311,8 @@ export class TrackingService {
     const params = [offer.id];
 
     if (capType === 'daily' && offer.daily_cap != null && offer.daily_cap > 0) {
-      sql = 'SELECT COUNT(*) AS cnt FROM conversions WHERE offer_id = ? AND DATE(created_at) = CURDATE()';
+      // Optimized: Use range query instead of DATE() function
+      sql = 'SELECT COUNT(*) AS cnt FROM conversions WHERE offer_id = ? AND created_at >= CURDATE() AND created_at < CURDATE() + INTERVAL 1 DAY';
       const [rows] = await pool.query(sql, params);
       const count = parseInt((Array.isArray(rows) ? rows[0] : rows).cnt || 0);
       return count >= offer.daily_cap;
@@ -403,13 +426,13 @@ export class TrackingService {
 
     let dateCondition = '';
     if (duration === 'hour') {
-      dateCondition = 'HOUR(created_at) = HOUR(NOW()) AND DATE(created_at) = CURDATE()';
+      dateCondition = 'created_at >= DATE_SUB(NOW(), INTERVAL 1 HOUR)';
     } else if (duration === 'day') {
-      dateCondition = 'DATE(created_at) = CURDATE()';
+      dateCondition = 'created_at >= CURDATE() AND created_at < CURDATE() + INTERVAL 1 DAY';
     } else if (duration === 'week') {
-      dateCondition = 'YEARWEEK(created_at, 1) = YEARWEEK(NOW(), 1)';
+      dateCondition = 'created_at >= DATE_SUB(NOW(), INTERVAL 1 WEEK)'; // Approximate, better for indexing
     } else if (duration === 'month') {
-      dateCondition = 'YEAR(created_at) = YEAR(NOW()) AND MONTH(created_at) = MONTH(NOW())';
+      dateCondition = 'created_at >= DATE_FORMAT(NOW() ,\'%Y-%m-01\')';
     } else {
       return false;
     }
@@ -436,13 +459,13 @@ export class TrackingService {
 
     let dateCondition = '';
     if (duration === 'hour') {
-      dateCondition = 'HOUR(created_at) = HOUR(NOW()) AND DATE(created_at) = CURDATE()';
+      dateCondition = 'created_at >= DATE_SUB(NOW(), INTERVAL 1 HOUR)';
     } else if (duration === 'day') {
-      dateCondition = 'DATE(created_at) = CURDATE()';
+      dateCondition = 'created_at >= CURDATE() AND created_at < CURDATE() + INTERVAL 1 DAY';
     } else if (duration === 'week') {
-      dateCondition = 'YEARWEEK(created_at, 1) = YEARWEEK(NOW(), 1)';
+      dateCondition = 'created_at >= DATE_SUB(NOW(), INTERVAL 1 WEEK)';
     } else if (duration === 'month') {
-      dateCondition = 'YEAR(created_at) = YEAR(NOW()) AND MONTH(created_at) = MONTH(NOW())';
+      dateCondition = 'created_at >= DATE_FORMAT(NOW() ,\'%Y-%m-01\')';
     } else {
       return false;
     }
@@ -463,46 +486,49 @@ export class TrackingService {
       const today = new Date().toISOString().split('T')[0];
 
       // Upsert daily stats
+      // Upsert daily stats
       if (type === 'click') {
-        // Unique click: first click from same IP + publisher + offer on same day
-        // Note: We need to get the latest click's IP for uniqueness check
         const [latestClickRows] = await pool.query(
           `SELECT ip FROM clicks 
            WHERE offer_id = ? AND publisher_id = ? 
            ORDER BY created_at DESC LIMIT 1`,
           [offerId, publisherId]
         );
+
         const latestClick = Array.isArray(latestClickRows) ? latestClickRows[0] : latestClickRows;
         const clickIp = latestClick?.ip || null;
 
-        const [uniqRows] = await pool.query(
-          `SELECT id FROM clicks 
-             WHERE offer_id = ? 
-               AND publisher_id = ? 
-               AND ip = ? 
-               AND DATE(created_at) = ? 
-             LIMIT 1`,
-          [offerId, publisherId, clickIp, today]
-        );
-        const isUnique = !uniqRows || uniqRows.length === 0;
+        let isUnique = true;
+        if (clickIp) {
+          const [countRows] = await pool.query(
+            `SELECT COUNT(*) as cnt FROM clicks 
+                 WHERE offer_id = ? 
+                   AND publisher_id = ? 
+                   AND ip = ? 
+                   AND created_at >= CURDATE()`,
+            [offerId, publisherId, clickIp]
+          );
+          const cnt = (Array.isArray(countRows) ? countRows[0] : countRows).cnt;
+          isUnique = (cnt === 1);
+        }
 
         await pool.query(
           `INSERT INTO daily_offer_stats (offer_id, day, clicks, unique_clicks)
-           VALUES (?, ?, 1, ?)
+           VALUES (?, CURDATE(), 1, ?)
            ON DUPLICATE KEY UPDATE 
              clicks = daily_offer_stats.clicks + 1,
              unique_clicks = daily_offer_stats.unique_clicks + (CASE WHEN ? = 1 THEN 1 ELSE 0 END),
              updated_at = NOW()`,
-          [offerId, today, isUnique ? 1 : 0, isUnique ? 1 : 0]
+          [offerId, isUnique ? 1 : 0, isUnique ? 1 : 0]
         );
       } else if (type === 'impression') {
         await pool.query(
           `INSERT INTO daily_offer_stats (offer_id, day, impressions)
-           VALUES (?, ?, 1)
+           VALUES (?, CURDATE(), 1)
            ON DUPLICATE KEY UPDATE 
              impressions = daily_offer_stats.impressions + 1,
              updated_at = NOW()`,
-          [offerId, today]
+          [offerId]
         );
       }
     } catch (error) {
