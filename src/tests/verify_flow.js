@@ -1,7 +1,7 @@
 import http from 'http';
 import https from 'https';
 
-const BASE_URL = 'https://reporting.pulpymedia.com';
+const BASE_URL = process.env.BASE_URL || 'http://localhost:5001';
 const OFFER_ID = 15;
 const PUB_ID = 2;
 

@@ -10,6 +10,7 @@ import https from 'https';
 import http from 'http';
 
 import { clickQueue } from '../workers/clickQueue.js';
+import redis from '../config/redis.js';
 
 export class PostbackService {
   async processPostback(query, request) {
@@ -19,6 +20,78 @@ export class PostbackService {
       if (!click_id && !rcid) {
         throw new Error('Either click_id or rcid is required');
       }
+
+      // ============================================
+      // REDIS FIRST CHECK
+      // ============================================
+      // Check if click exists in Redis (pending DB insert)
+      if (click_id) {
+        const redisClick = await redis.hgetall(`click:${click_id}`);
+        if (redisClick && redisClick.offer_id) {
+          // Click found in Redis! Process conversion in Redis.
+
+          // 1. Rehydrate click data object
+          const clickData = {
+            ...redisClick,
+            offer_id: parseInt(redisClick.offer_id),
+            publisher_id: parseInt(redisClick.publisher_id),
+            publisher_offer_id: parseInt(redisClick.publisher_offer_id || 0)
+          };
+
+          // 2. Validate Offer / Fetch Payout (using existing services)
+          const offer = await offerService.findById(clickData.offer_id);
+          if (!offer) throw new Error('Offer not found (Redis path)');
+
+          const offerValidation = offerService.checkOfferValidity(offer, true);
+          if (!offerValidation.valid) {
+            return { success: false, message: offerValidation.message, duplicate: false };
+          }
+
+          // 3. Get Assignment & Payout
+          let assignment = null;
+          if (clickData.publisher_offer_id) {
+            assignment = await assignmentService.findById(clickData.publisher_offer_id);
+          }
+
+          let payout = parseFloat(offer.affiliate_amount);
+          if (assignment?.payout_override) payout = parseFloat(assignment.payout_override);
+          const conversionAmount = amount ? parseFloat(amount) : payout;
+
+          // 4. Status Determination
+          let finalStatus = status;
+          if (assignment?.conversion_approval_percentage) {
+            const randomValue = Math.random() * 100;
+            finalStatus = (randomValue <= parseFloat(assignment.conversion_approval_percentage)) ? 'approved' : 'pending';
+          }
+
+          // 5. Store Conversion in Redis
+          const conversionData = {
+            click_uuid: click_id,
+            offer_id: clickData.offer_id,
+            publisher_id: clickData.publisher_id,
+            publisher_offer_id: clickData.publisher_offer_id,
+            rcid: rcid || redisClick.rcid || uuidv4(),
+            status: finalStatus,
+            amount: conversionAmount,
+            payout: payout,
+            ip: extractIP(request),
+            timestamp: new Date().toISOString(),
+            postback_payload: JSON.stringify({ query, headers: request.headers })
+          };
+
+          // Save to Redis (Worker will pick this up after inserting the click)
+          await redis.setex(`conversion:${click_id}`, 3600, JSON.stringify(conversionData));
+
+          return {
+            success: true,
+            message: 'Conversion recorded (Buffered in Redis)',
+            duplicate: false,
+            note: 'Click handled via Redis buffer'
+          };
+        }
+      }
+
+      // NO REDIS MATCH? FALLBACK TO DB LOGIC BELOW...
 
       // Find click if click_id provided
       let click = null;
@@ -43,19 +116,9 @@ export class PostbackService {
         }
 
         if (!click) {
-          // SMART RETRY Check:
-          // If the worker queue is busy, the click might still be in the queue.
-          // Throw a special error that the controller can interpret as a 429 (Retry Later).
-          // fastq exposes .length() (pending) and .running() (active workers)
-
-          const queueLoad = clickQueue.length() + clickQueue.running();
-
-          if (queueLoad > 0) {
-            const error = new Error('System busy, click potentially pending processing');
-            error.code = 'RETRY_LATER'; // Custom code for controller to catch
-            throw error;
-          }
-
+          // Check if queue has backend pressure, but since we use Redis now, 
+          // a missing click means it's truly missing (or Redis evicted it and DB write failed?)
+          // We will stick to standard logic: if not in Redis and not in DB, it's invalid.
           throw new Error('Click not found');
         }
       }

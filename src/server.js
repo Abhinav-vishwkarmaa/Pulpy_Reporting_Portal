@@ -188,5 +188,12 @@ const start = async () => {
   }
 };
 
+import runWorker from './workers/redisWorker.js';
+
 start();
+
+// Start Background Worker (Redis Stream Consumer)
+runWorker().catch(err => {
+  console.error('Failed to start Redis Worker:', err);
+});
 

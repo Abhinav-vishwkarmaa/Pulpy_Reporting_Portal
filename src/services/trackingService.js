@@ -11,6 +11,7 @@ import publisherService from './publisherService.js';
 import assignmentService from './assignmentService.js';
 
 import { clickQueue, isOverloaded } from '../workers/clickQueue.js';
+import redis from '../config/redis.js';
 
 export class TrackingService {
   async trackClick(query, request) {
@@ -271,52 +272,79 @@ export class TrackingService {
         };
       }
 
-      const clickTask = {
-        sql: `INSERT INTO clicks (
-          click_uuid, offer_id, publisher_id, publisher_offer_id,
-          ip, user_agent, referrer, country, domain,
-          device_type, browser, os, os_version, device_brand, device_model,
-          source_id, device_id, google_id, android_id, rcid, tid,
-          timestamp, created_at
-        ) VALUES (
-          ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW()
-        )`,
-        params: [
-          clickUuid,
-          offerId,
-          publisherId,
-          assignment.id,
-          ip,
-          userAgent,
-          referrer,
-          country,
-          domain,
-          deviceInfo.deviceType,
-          deviceInfo.browser,
-          deviceInfo.os,
-          deviceInfo.osVersion,
-          deviceInfo.deviceBrand,
-          deviceInfo.deviceModel,
-          query.source_id || null,
-          query.device_id || null,
-          query.google_id || null,
-          query.android_id || null,
-          query.rcid || null,
-          tid, // Storing affiliate's click_id here
-        ],
-        type: 'insert_click',
-        data: { offerId, publisherId }, // Pass data for worker to update stats
-        startTime: Date.now()
+      // ============================================
+      // PERSISTENCE: Redis (High Throughput)
+      // ============================================
+      // 1. Store Full Metadata in Redis Hash (TTL 30m)
+      // 2. Push click_id to Redis Stream for Batch Worker
+
+      const redisKey = `click:${clickUuid}`;
+      const clickData = {
+        click_uuid: clickUuid,
+        offer_id: offerId,
+        publisher_id: publisherId,
+        publisher_offer_id: assignment.id,
+        ip: ip,
+        user_agent: userAgent,
+        referrer: referrer || '',
+        country: country || '',
+        domain: domain || '',
+        device_type: deviceInfo.deviceType,
+        browser: deviceInfo.browser,
+        os: deviceInfo.os,
+        os_version: deviceInfo.osVersion,
+        device_brand: deviceInfo.deviceBrand,
+        device_model: deviceInfo.deviceModel,
+        source_id: query.source_id || '',
+        device_id: query.device_id || '',
+        google_id: query.google_id || '',
+        android_id: query.android_id || '',
+        rcid: query.rcid || '',
+        tid: tid || '',
+        timestamp: new Date().toISOString(),
+        status: 'PENDING_DB'
       };
 
-      // Push to queue (non-blocking)
-      clickQueue.push(clickTask);
+      try {
+        const pipeline = redis.pipeline();
 
-      // Also trigger daily stats update in background (fire-and-forget)
-      // UPDATED: Now handled by the worker queue to respect concurrency.
-      // this.updateDailyStats(offerId, publisherId, 'click').catch(err => logger.error('Async stats update failed:', err));
+        // Store Data
+        pipeline.hset(redisKey, clickData);
+        pipeline.expire(redisKey, 1800); // 30 minutes
+
+        // Add to Processing Stream
+        pipeline.xadd('stream:clicks', '*', 'id', clickUuid);
+
+        await pipeline.exec();
+      } catch (redisErr) {
+        // If Redis fails, FALLBACK to legacy DB insert (Safety Net)
+        logger.error('Redis write failed, falling back to DB/Queue:', redisErr);
+        const clickTask = {
+          sql: `INSERT INTO clicks (
+              click_uuid, offer_id, publisher_id, publisher_offer_id,
+              ip, user_agent, referrer, country, domain,
+              device_type, browser, os, os_version, device_brand, device_model,
+              source_id, device_id, google_id, android_id, rcid, tid,
+              timestamp, created_at
+            ) VALUES (
+              ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW()
+            )`,
+          params: [
+            clickUuid, offerId, publisherId, assignment.id, ip, userAgent, referrer, country, domain,
+            deviceInfo.deviceType, deviceInfo.browser, deviceInfo.os, deviceInfo.osVersion,
+            deviceInfo.deviceBrand, deviceInfo.deviceModel, query.source_id || null,
+            query.device_id || null, query.google_id || null, query.android_id || null,
+            query.rcid || null, tid
+          ],
+          type: 'insert_click',
+          data: { offerId, publisherId },
+          startTime: Date.now()
+        };
+        clickQueue.push(clickTask);
+      }
 
       // Cache the result for deduplication (3 seconds TTL)
+      // We can iterate this to use Redis later, keeping memory for now as it's faster for reads
       if (global.clickDedupeCache) {
         global.clickDedupeCache.set(dedupeKey, {
           redirectUrl: redirectUrl,
