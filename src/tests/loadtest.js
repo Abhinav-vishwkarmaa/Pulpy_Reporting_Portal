@@ -23,7 +23,8 @@ export default function () {
 
     const params = {
         headers: {
-            'User-Agent': 'k6-load-test',
+            'User-Agent': `k6-${__VU}-${__ITER}`,
+            'X-Forwarded-For': `10.0.${__VU}.${__ITER % 255}`
         },
         redirects: 0,
         timeout: '3s', // prevent infinite waiting

@@ -84,31 +84,56 @@ async function runWorker() {
 
             if (clicksToInsert.length > 0) {
                 // 1. Bulk Insert Clicks to MySQL
-                await bulkInsertClicks(clicksToInsert);
+                // CRITICAL: We MUST wrap this in try/catch to prevent crashing worker entirely
+                // If bulk insert fails, we might process one by one or retry?
+                // Ideally, we retry the batch once, then log and maybe move to DLQ.
+                // For this implementation, we throw and let the worker retry the loop (Stream provides natural retry if not ACKed)
+                try {
+                    await bulkInsertClicks(clicksToInsert);
 
-                // 2. Check for Pending Conversions in Redis
-                // For each successfully inserted click, check if a conversion is waiting
-                await processPendingConversions(clicksToInsert);
+                    // 2. SUCCESS! Now check for Pending Conversions in Redis
+                    // For each successfully inserted click, check if a conversion is waiting
+                    await processPendingConversions(clicksToInsert);
 
-                // 3. Update Stats (batch update)
-                // Note: updating stats inside the loop can be slow. 
-                // Optimize: Aggregate stats in memory and push single update?
-                // For now, fire-and-forget or batch call
-                for (const c of clicksToInsert) {
-                    trackingService.updateDailyStats(c.offer_id, c.publisher_id, 'click').catch(e => { });
+                    // 3. Stats - Aggregation
+                    // We increment Redis counters for stats, not DB directly here.
+                    // Separate Stats Worker will flush these.
+                    // Implementation:
+                    // redis.incr(`stats:offer:${offerId}:${date}:clicks`)
+                    const pipelineStats = redis.pipeline();
+                    const today = new Date().toISOString().split('T')[0];
+                    for (const c of clicksToInsert) {
+                        // Increment Click Count
+                        pipelineStats.incr(`stats:offer:${c.offer_id}:${today}:clicks`);
+                        pipelineStats.incr(`stats:pub:${c.publisher_id}:${today}:clicks`);
+                    }
+                    await pipelineStats.exec();
+
+                    // 4. Cleanup & ACK
+                    const cleanupPipeline = redis.pipeline();
+                    // ACK ONLY after success
+                    cleanupPipeline.xack(STREAM_KEY, GROUP_NAME, ...validMsgIds);
+                    // Remove click keys (TTL will clean them up eventually, but removing frees RAM)
+                    // We keep them if we want to debug, but high volume = delete.
+                    // User said: "Clean Redis keys only after DB success"
+                    clickIds.forEach(id => cleanupPipeline.del(`click:${id}`));
+                    await cleanupPipeline.exec();
+
+                    logger.info(`✅ Processed Batch: ${clicksToInsert.length} clicks`);
+
+                } catch (dbErr) {
+                    logger.error('❌ Batch DB Insert Failed - Will Retry via Stream PEL', dbErr);
+                    // Do NOT Ack. Stream delivery count will increase.
+                    // Sleep a bit to backoff
+                    await new Promise(r => setTimeout(r, 2000));
+                }
+            } else {
+                // Empty batch (e.g. malformed data in redis), logic to skip/ack? 
+                // If we had validMsgIds but no clicksToInsert, we should ACK them to avoid loops
+                if (validMsgIds.length > 0) {
+                    await redis.xack(STREAM_KEY, GROUP_NAME, ...validMsgIds);
                 }
             }
-
-            // 4. Acknowledge Messages & Cleanup Redis Keys
-            const cleanupPipeline = redis.pipeline();
-            cleanupPipeline.xack(STREAM_KEY, GROUP_NAME, ...validMsgIds);
-
-            // Remove click keys (and conversion keys processed in step 2)
-            // We do cleanup inside 'processPendingConversions' too, but let's be safe
-            // Ideally, we keep keys for a bit or delete now. User said: "After successful DB inserts: Remove Redis keys"
-            clickIds.forEach(id => cleanupPipeline.del(`click:${id}`));
-
-            await cleanupPipeline.exec();
 
         } catch (err) {
             logger.error('Worker Error:', err);
@@ -170,13 +195,32 @@ async function processPendingConversions(clicks) {
                     ]
                 );
 
-                // Update Stats
-                postbackService.updateDailyStats(conv.offer_id, conv.amount, conv.payout).catch(e => { });
+                // Update Stats (Redis Atomic Counters)
+                // stats:offer:{id}:{date}:conversions
+                // stats:offer:{id}:{date}:revenue
+                // stats:offer:{id}:{date}:payout
+
+                const today = new Date().toISOString().split('T')[0];
+                const pipe = redis.pipeline();
+
+                const statsKeyOffer = `stats:offer:${conv.offer_id}:${today}`;
+                const statsKeyPub = `stats:pub:${conv.publisher_id}:${today}`; // If we track pub stats
+
+                pipe.incr(`${statsKeyOffer}:conversions`);
+                pipe.incrbyfloat(`${statsKeyOffer}:revenue`, conv.amount); // Redis doesn't support float well in old versions, but incrbyfloat is standard now
+                pipe.incrbyfloat(`${statsKeyOffer}:payout`, conv.payout);
+
+                // Also Pub Stats?
+                pipe.incr(`${statsKeyPub}:conversions`);
+                pipe.incrbyfloat(`${statsKeyPub}:revenue`, conv.amount);
+                pipe.incrbyfloat(`${statsKeyPub}:payout`, conv.payout);
+
+                await pipe.exec();
 
                 // Cleanup Conversion Key
                 await redis.del(`conversion:${conv.click_uuid}`);
 
-                logger.info(`✅ Pending Conversion Processed: ${conv.click_uuid}`);
+                logger.info(`✅ Pending Conversion Processed & Stats Updated (Redis): ${conv.click_uuid}`);
 
             } catch (insertErr) {
                 logger.error(`Failed to process pending conversion for ${clicks[i].click_uuid}`, insertErr);
