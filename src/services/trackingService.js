@@ -3,7 +3,8 @@ import logger from '../utils/logger.js';
 import { v4 as uuidv4 } from 'uuid';
 import { extractIP } from '../utils/ipExtractor.js';
 import { parseDevice } from '../utils/deviceParser.js';
-import { getCountryFromHeaders } from '../utils/countryLookup.js';
+import { getLocationFromIP, getCountryFromHeaders } from '../utils/countryLookup.js';
+import { getISP } from '../utils/ispLookup.js';
 import { extractDomain, appendClickParams, replaceMacros, generateClickId } from '../utils/urlGenerator.js';
 import { generateOfferErrorPage } from '../utils/errorPage.js';
 import offerService from './offerService.js';
@@ -103,9 +104,19 @@ export class TrackingService {
 
       // Parse params
       const deviceInfo = parseDevice(userAgent);
-      const country = getCountryFromHeaders(request);
       const referrer = request.headers.referer || '';
       const domain = extractDomain(referrer);
+
+      // Geo & ISP Lookup
+      const location = getLocationFromIP(ip); // { country, region, city }
+      // Fallback country from headers if GeoIP missed (e.g. Cloudflare)
+      const country_final = location.country || getCountryFromHeaders(request) || '';
+
+      // Async ISP lookup (with timeout protection)
+      let isp = null;
+      try {
+        isp = await getISP(ip);
+      } catch (e) { /* ignore */ }
 
       const redirectUrl = this._buildRedirectUrl(assignment, offer, query, clickUuid);
 
@@ -118,12 +129,16 @@ export class TrackingService {
         ip: ip,
         user_agent: userAgent,
         referrer: referrer,
-        country: country || '',
+        country: country_final,
+        region: location.region || '',
+        city: location.city || '',
+        isp: isp || '',
         domain: domain,
         device_type: deviceInfo.deviceType,
         browser: deviceInfo.browser,
         os: deviceInfo.os,
-        os_version: deviceInfo.osVersion,
+        os_version: deviceInfo.osVersion, // Corrected to snake_case for DB consistency
+        device_brand: deviceInfo.deviceBrand,
         device_model: deviceInfo.deviceModel,
         tid: query.tid || query.click_id || '', // Affiliate ID
         rcid: query.rcid || '',

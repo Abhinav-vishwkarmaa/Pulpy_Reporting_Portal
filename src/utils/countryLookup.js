@@ -1,32 +1,32 @@
+import geoip from 'geoip-lite';
+
 /**
- * Country lookup utilities
- * Simple country detection based on IP or other methods
- * For production, consider using MaxMind GeoIP2 or similar service
+ * Extracts location details from IP using geoip-lite.
+ * Returns { country, region, city }.
  */
-
-// Simple country mapping (can be enhanced with GeoIP service)
-const countryMap = {};
-
-export async function getCountryFromIP(ip) {
-  // TODO: Implement proper GeoIP lookup
-  // For now, return null or implement a simple mapping
-  // In production, use MaxMind GeoIP2 or similar service
-  
-  if (!ip || ip === 'unknown' || ip === '::1' || ip === '127.0.0.1') {
-    return null;
+export function getLocationFromIP(ip) {
+  if (!ip || ip === '::1' || ip === '127.0.0.1') {
+    return { country: null, region: null, city: null };
   }
-  
-  // Placeholder - implement actual GeoIP lookup
-  return null;
+
+  try {
+    const geo = geoip.lookup(ip);
+    if (geo) {
+      return {
+        country: geo.country || null,
+        region: geo.region || null,
+        city: geo.city || null
+      };
+    }
+  } catch (err) {
+    // Silent fail for geo lookup
+  }
+  return { country: null, region: null, city: null };
 }
 
+/**
+ * Fallback to standard Cloudflare header if GeoIP fails or is not desired
+ */
 export function getCountryFromHeaders(request) {
-  // Some CDNs/proxies provide country info
-  const cfCountry = request.headers['cf-ipcountry'];
-  if (cfCountry) {
-    return cfCountry;
-  }
-  
-  return null;
+  return request.headers['cf-ipcountry'] || null;
 }
-

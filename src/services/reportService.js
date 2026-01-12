@@ -65,12 +65,9 @@ export class ReportService {
         'advertiser_id': 'o.advertiser_id',
         'ip': 'c.ip',
         'country': 'c.country',
-        'isp': 'c.isp', // Will return NULL if column missing, handled via try/catch in specific selection if needed, or assume NULL for now. 
-        // To be safe against "Unknown column", usually we'd select NULL if we know it doesn't exist.
-        // Assuming schema matches what's in DB. If c.isp doesn't exist, this fails. 
-        // I will use NULL aliases for now as they are missing in schema.
-        'city': 'NULL as city', // c.city missing
-        'region': 'NULL as region', // c.region missing
+        'isp': 'c.isp',
+        'city': 'c.city',
+        'region': 'c.region',
         'tid': 'c.tid',
         'date': "DATE(CONVERT_TZ(c.created_at, '+00:00', '+05:30'))",
         'hour': "HOUR(CONVERT_TZ(c.created_at, '+00:00', '+05:30'))",
@@ -86,9 +83,6 @@ export class ReportService {
 
       // Safe column selector
       const getDimCol = (key) => {
-        if (key === 'isp') return 'NULL as isp';
-        if (key === 'city') return 'NULL as city';
-        if (key === 'region') return 'NULL as region';
         return dimMap[key] || 'NULL';
       };
 
