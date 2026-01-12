@@ -101,6 +101,66 @@ async function offerRoutes(fastify) {
     },
     offerController.getOffer
   );
+
+  fastify.get(
+    '/api/admin/offers/:id/stats',
+    {
+      schema: {
+        params: offerIdParamSchema,
+      },
+    },
+    offerController.getStats
+  );
+
+  fastify.get(
+    '/api/admin/offers/:id/daily-stats',
+    {
+      schema: {
+        params: offerIdParamSchema,
+      },
+    },
+    offerController.getDailyStats
+  );
+
+  fastify.get(
+    '/api/admin/offers/:id/assignments',
+    {
+      schema: {
+        params: offerIdParamSchema,
+      },
+    },
+    offerController.getAssignments
+  );
+
+  fastify.get(
+    '/api/admin/offers/:id/recent-clicks',
+    {
+      schema: {
+        params: offerIdParamSchema,
+      },
+    },
+    offerController.getRecentClicks
+  );
+
+  fastify.get(
+    '/api/admin/offers/:id/recent-conversions',
+    {
+      schema: {
+        params: offerIdParamSchema,
+      },
+    },
+    offerController.getRecentConversions
+  );
+
+  fastify.get(
+    '/api/admin/offers/:id/publisher-stats',
+    {
+      schema: {
+        params: offerIdParamSchema,
+      },
+    },
+    offerController.getPublisherStats
+  );
 }
 
 export default offerRoutes;

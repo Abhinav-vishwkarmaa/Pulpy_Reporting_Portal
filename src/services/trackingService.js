@@ -184,23 +184,26 @@ export class TrackingService {
     let sql = '';
     const params = [offer.id];
 
+    // Use IST (UTC+05:30) for timezone conversions
+    const tz = '+05:30';
+
     if (capType === 'daily' && offer.daily_cap != null && offer.daily_cap > 0) {
       // Optimized: Use range query instead of DATE() function
-      sql = 'SELECT COUNT(*) AS cnt FROM conversions WHERE offer_id = ? AND created_at >= CURDATE() AND created_at < CURDATE() + INTERVAL 1 DAY';
+      sql = `SELECT COUNT(*) AS cnt FROM conversions WHERE offer_id = ? AND DATE(CONVERT_TZ(created_at, '+00:00', '${tz}')) = DATE(CONVERT_TZ(UTC_TIMESTAMP(), '+00:00', '${tz}'))`;
       const [rows] = await pool.query(sql, params);
       const count = parseInt((Array.isArray(rows) ? rows[0] : rows).cnt || 0);
       return count >= offer.daily_cap;
     }
 
     if (capType === 'monthly' && offer.monthly_cap != null && offer.monthly_cap > 0) {
-      sql = 'SELECT COUNT(*) AS cnt FROM conversions WHERE offer_id = ? AND YEAR(created_at)=YEAR(NOW()) AND MONTH(created_at)=MONTH(NOW())';
+      sql = `SELECT COUNT(*) AS cnt FROM conversions WHERE offer_id = ? AND YEAR(CONVERT_TZ(created_at, '+00:00', '${tz}')) = YEAR(CONVERT_TZ(UTC_TIMESTAMP(), '+00:00', '${tz}')) AND MONTH(CONVERT_TZ(created_at, '+00:00', '${tz}')) = MONTH(CONVERT_TZ(UTC_TIMESTAMP(), '+00:00', '${tz}'))`;
       const [rows] = await pool.query(sql, params);
       const count = parseInt((Array.isArray(rows) ? rows[0] : rows).cnt || 0);
       return count >= offer.monthly_cap;
     }
 
     if (capType === 'weekly' && offer.total_cap != null && offer.total_cap > 0) {
-      sql = 'SELECT COUNT(*) AS cnt FROM conversions WHERE offer_id = ? AND YEARWEEK(created_at,1)=YEARWEEK(NOW(),1)';
+      sql = `SELECT COUNT(*) AS cnt FROM conversions WHERE offer_id = ? AND YEARWEEK(CONVERT_TZ(created_at, '+00:00', '${tz}'), 1) = YEARWEEK(CONVERT_TZ(UTC_TIMESTAMP(), '+00:00', '${tz}'), 1)`;
       const [rows] = await pool.query(sql, params);
       const count = parseInt((Array.isArray(rows) ? rows[0] : rows).cnt || 0);
       return count >= offer.total_cap;
@@ -212,7 +215,7 @@ export class TrackingService {
   async applyCapAction(offer, fallbackRedirect) {
     const action = offer.cap_action || 'fallback';
     if (action === 'pause') {
-      await pool.query('UPDATE offers SET status = ?, updated_at = NOW() WHERE id = ?', ['paused', offer.id]);
+      await pool.query('UPDATE offers SET status = ?, updated_at = UTC_TIMESTAMP() WHERE id = ?', ['paused', offer.id]);
     }
     return {
       redirect: fallbackRedirect,
@@ -275,7 +278,7 @@ export class TrackingService {
       await pool.query(
         `INSERT INTO impressions (
           imp_uuid, offer_id, publisher_id, ip, user_agent, referrer, timestamp, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, NOW(), NOW())`,
+        ) VALUES (?, ?, ?, ?, ?, ?, UTC_TIMESTAMP(), UTC_TIMESTAMP())`,
         [impUuid, offerId, publisherId, ip, userAgent, referrer]
       );
 
@@ -298,15 +301,18 @@ export class TrackingService {
     const capAmount = parseFloat(assignment.capping_budget_amount);
     if (capAmount <= 0) return false;
 
+    // Use IST (UTC+05:30) for timezone conversions
+    const tz = '+05:30';
+
     let dateCondition = '';
     if (duration === 'hour') {
-      dateCondition = 'created_at >= DATE_SUB(NOW(), INTERVAL 1 HOUR)';
+      dateCondition = `DATE(CONVERT_TZ(created_at, '+00:00', '${tz}')) = DATE(CONVERT_TZ(UTC_TIMESTAMP(), '+00:00', '${tz}')) AND HOUR(CONVERT_TZ(created_at, '+00:00', '${tz}')) = HOUR(CONVERT_TZ(UTC_TIMESTAMP(), '+00:00', '${tz}'))`;
     } else if (duration === 'day') {
-      dateCondition = 'created_at >= CURDATE() AND created_at < CURDATE() + INTERVAL 1 DAY';
+      dateCondition = `DATE(CONVERT_TZ(created_at, '+00:00', '${tz}')) = DATE(CONVERT_TZ(UTC_TIMESTAMP(), '+00:00', '${tz}'))`;
     } else if (duration === 'week') {
-      dateCondition = 'created_at >= DATE_SUB(NOW(), INTERVAL 1 WEEK)'; // Approximate, better for indexing
+      dateCondition = `YEARWEEK(CONVERT_TZ(created_at, '+00:00', '${tz}'), 1) = YEARWEEK(CONVERT_TZ(UTC_TIMESTAMP(), '+00:00', '${tz}'), 1)`;
     } else if (duration === 'month') {
-      dateCondition = 'created_at >= DATE_FORMAT(NOW() ,\'%Y-%m-01\')';
+      dateCondition = `YEAR(CONVERT_TZ(created_at, '+00:00', '${tz}')) = YEAR(CONVERT_TZ(UTC_TIMESTAMP(), '+00:00', '${tz}')) AND MONTH(CONVERT_TZ(created_at, '+00:00', '${tz}')) = MONTH(CONVERT_TZ(UTC_TIMESTAMP(), '+00:00', '${tz}'))`;
     } else {
       return false;
     }
@@ -331,15 +337,18 @@ export class TrackingService {
     const capCount = parseInt(assignment.capping_conversions_amount);
     if (capCount <= 0) return false;
 
+    // Use IST (UTC+05:30) for timezone conversions
+    const tz = '+05:30';
+
     let dateCondition = '';
     if (duration === 'hour') {
-      dateCondition = 'created_at >= DATE_SUB(NOW(), INTERVAL 1 HOUR)';
+      dateCondition = `DATE(CONVERT_TZ(created_at, '+00:00', '${tz}')) = DATE(CONVERT_TZ(UTC_TIMESTAMP(), '+00:00', '${tz}')) AND HOUR(CONVERT_TZ(created_at, '+00:00', '${tz}')) = HOUR(CONVERT_TZ(UTC_TIMESTAMP(), '+00:00', '${tz}'))`;
     } else if (duration === 'day') {
-      dateCondition = 'created_at >= CURDATE() AND created_at < CURDATE() + INTERVAL 1 DAY';
+      dateCondition = `DATE(CONVERT_TZ(created_at, '+00:00', '${tz}')) = DATE(CONVERT_TZ(UTC_TIMESTAMP(), '+00:00', '${tz}'))`;
     } else if (duration === 'week') {
-      dateCondition = 'created_at >= DATE_SUB(NOW(), INTERVAL 1 WEEK)';
+      dateCondition = `YEARWEEK(CONVERT_TZ(created_at, '+00:00', '${tz}'), 1) = YEARWEEK(CONVERT_TZ(UTC_TIMESTAMP(), '+00:00', '${tz}'), 1)`;
     } else if (duration === 'month') {
-      dateCondition = 'created_at >= DATE_FORMAT(NOW() ,\'%Y-%m-01\')';
+      dateCondition = `YEAR(CONVERT_TZ(created_at, '+00:00', '${tz}')) = YEAR(CONVERT_TZ(UTC_TIMESTAMP(), '+00:00', '${tz}')) AND MONTH(CONVERT_TZ(created_at, '+00:00', '${tz}')) = MONTH(CONVERT_TZ(UTC_TIMESTAMP(), '+00:00', '${tz}'))`;
     } else {
       return false;
     }
@@ -357,7 +366,12 @@ export class TrackingService {
 
   async updateDailyStats(offerId, publisherId, type) {
     try {
-      const today = new Date().toISOString().split('T')[0];
+      // Calculate today in IST (UTC+5:30) for business logic
+      const now = new Date();
+      // Add 5.5 hours to get IST time
+      const istTime = new Date(now.getTime() + (5.5 * 60 * 60 * 1000));
+      const today = istTime.toISOString().split('T')[0];
+      const tz = '+05:30';
 
       // Upsert daily stats
       // Upsert daily stats
@@ -379,8 +393,8 @@ export class TrackingService {
                  WHERE offer_id = ? 
                    AND publisher_id = ? 
                    AND ip = ? 
-                   AND created_at >= CURDATE()`,
-            [offerId, publisherId, clickIp]
+                   AND DATE(CONVERT_TZ(created_at, '+00:00', '${tz}')) = ?`,
+            [offerId, publisherId, clickIp, today]
           );
           const cnt = (Array.isArray(countRows) ? countRows[0] : countRows).cnt;
           isUnique = (cnt === 1);
@@ -388,21 +402,21 @@ export class TrackingService {
 
         await pool.query(
           `INSERT INTO daily_offer_stats (offer_id, day, clicks, unique_clicks)
-           VALUES (?, CURDATE(), 1, ?)
+           VALUES (?, ?, 1, ?)
            ON DUPLICATE KEY UPDATE 
              clicks = daily_offer_stats.clicks + 1,
              unique_clicks = daily_offer_stats.unique_clicks + (CASE WHEN ? = 1 THEN 1 ELSE 0 END),
-             updated_at = NOW()`,
-          [offerId, isUnique ? 1 : 0, isUnique ? 1 : 0]
+             updated_at = UTC_TIMESTAMP()`,
+          [offerId, today, isUnique ? 1 : 0, isUnique ? 1 : 0]
         );
       } else if (type === 'impression') {
         await pool.query(
           `INSERT INTO daily_offer_stats (offer_id, day, impressions)
-           VALUES (?, CURDATE(), 1)
+           VALUES (?, ?, 1)
            ON DUPLICATE KEY UPDATE 
              impressions = daily_offer_stats.impressions + 1,
-             updated_at = NOW()`,
-          [offerId]
+             updated_at = UTC_TIMESTAMP()`,
+          [offerId, today]
         );
       }
     } catch (error) {

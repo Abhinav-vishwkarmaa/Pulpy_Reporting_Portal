@@ -9,17 +9,24 @@ export class DashboardService {
    */
   getDateBoundaries() {
     const now = new Date();
-    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    const yesterday = new Date(today);
-    yesterday.setDate(yesterday.getDate() - 1);
-    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    // Add 5.5 hours to get IST time
+    const istTime = new Date(now.getTime() + (5.5 * 60 * 60 * 1000));
+
+    // IST Day start (YYYY-MM-DD)
+    const todayStr = istTime.toISOString().split('T')[0];
+
+    // Yesterday in IST
+    const yesterdayTime = new Date(istTime);
+    yesterdayTime.setDate(yesterdayTime.getDate() - 1);
+    const yesterdayStr = yesterdayTime.toISOString().split('T')[0];
+
+    // Month start in IST
+    const monthStartStr = todayStr.substring(0, 7) + '-01';
 
     return {
-      todayStart: today.toISOString().split('T')[0] + ' 00:00:00',
-      todayEnd: now.toISOString(),
-      yesterdayStart: yesterday.toISOString().split('T')[0] + ' 00:00:00',
-      yesterdayEnd: yesterday.toISOString().split('T')[0] + ' 23:59:59',
-      monthStart: monthStart.toISOString().split('T')[0] + ' 00:00:00',
+      todayStart: todayStr,
+      yesterdayStart: yesterdayStr,
+      monthStart: monthStartStr,
     };
   }
 
@@ -37,7 +44,7 @@ export class DashboardService {
           COALESCE(SUM(amount), 0) as revenue,
           COALESCE(SUM(payout), 0) as payout
         FROM conversions
-        WHERE DATE(created_at) = DATE(?)
+        WHERE DATE(CONVERT_TZ(created_at, '+00:00', '+05:30')) = ?
         `,
         [dates.todayStart]
       );
@@ -45,7 +52,7 @@ export class DashboardService {
       const [conversionsYesterday] = await pool.query(
         `SELECT COUNT(*) as total
         FROM conversions
-        WHERE DATE(created_at) = DATE(?)
+        WHERE DATE(CONVERT_TZ(created_at, '+00:00', '+05:30')) = ?
         `,
         [dates.yesterdayStart]
       );
@@ -56,7 +63,7 @@ export class DashboardService {
           COUNT(*) as total,
           COUNT(DISTINCT click_uuid) as unique_clicks
         FROM clicks
-        WHERE DATE(created_at) = DATE(?)
+        WHERE DATE(CONVERT_TZ(created_at, '+00:00', '+05:30')) = ?
         `,
         [dates.todayStart]
       );
@@ -64,7 +71,7 @@ export class DashboardService {
       const [clicksYesterday] = await pool.query(
         `SELECT COUNT(*) as total
         FROM clicks
-        WHERE DATE(created_at) = DATE(?)
+        WHERE DATE(CONVERT_TZ(created_at, '+00:00', '+05:30')) = ?
         `,
         [dates.yesterdayStart]
       );
@@ -72,7 +79,7 @@ export class DashboardService {
       const [clicksMTD] = await pool.query(
         `SELECT COUNT(*) as total
         FROM clicks
-        WHERE created_at >= ?
+        WHERE DATE(CONVERT_TZ(created_at, '+00:00', '+05:30')) >= ?
         `,
         [dates.monthStart]
       );
@@ -81,7 +88,7 @@ export class DashboardService {
       const [impressionsToday] = await pool.query(
         `SELECT COUNT(*) as total
         FROM impressions
-        WHERE DATE(created_at) = DATE(?)
+        WHERE DATE(CONVERT_TZ(created_at, '+00:00', '+05:30')) = ?
         `,
         [dates.todayStart]
       );
@@ -89,7 +96,7 @@ export class DashboardService {
       const [impressionsMTD] = await pool.query(
         `SELECT COUNT(*) as total
         FROM impressions
-        WHERE created_at >= ?
+        WHERE DATE(CONVERT_TZ(created_at, '+00:00', '+05:30')) >= ?
         `,
         [dates.monthStart]
       );
@@ -100,7 +107,7 @@ export class DashboardService {
           COALESCE(SUM(amount), 0) as revenue,
           COALESCE(SUM(payout), 0) as payout
         FROM conversions
-        WHERE DATE(created_at) = DATE(?)
+        WHERE DATE(CONVERT_TZ(created_at, '+00:00', '+05:30')) = ?
         `,
         [dates.todayStart]
       );
@@ -108,7 +115,7 @@ export class DashboardService {
       const [revenueYesterday] = await pool.query(
         `SELECT COALESCE(SUM(amount), 0) as revenue
         FROM conversions
-        WHERE DATE(created_at) = DATE(?)
+        WHERE DATE(CONVERT_TZ(created_at, '+00:00', '+05:30')) = ?
         `,
         [dates.yesterdayStart]
       );
@@ -118,7 +125,7 @@ export class DashboardService {
           COALESCE(SUM(amount), 0) as revenue,
           COALESCE(SUM(payout), 0) as payout
         FROM conversions
-        WHERE created_at >= ?
+        WHERE DATE(CONVERT_TZ(created_at, '+00:00', '+05:30')) >= ?
         `,
         [dates.monthStart]
       );
@@ -215,7 +222,7 @@ export class DashboardService {
       const params = [];
 
       if (dateFrom && dateTo) {
-        dateCondition = 'AND DATE(conv.created_at) >= DATE(?) AND DATE(conv.created_at) <= DATE(?)';
+        dateCondition = 'AND DATE(CONVERT_TZ(conv.created_at, \'+00:00\', \'+05:30\')) >= ? AND DATE(CONVERT_TZ(conv.created_at, \'+00:00\', \'+05:30\')) <= ?';
         params.push(dateFrom, dateTo);
       }
 
@@ -258,15 +265,16 @@ export class DashboardService {
       const groupBy = filters.group_by || 'day';
 
       let dateGroup, dateSelect;
+      const tz = '+05:30';
       if (groupBy === 'week') {
-        dateGroup = `DATE_FORMAT(created_at, '%Y-%u')`;
-        dateSelect = `DATE_FORMAT(created_at, '%Y-%u')`;
+        dateGroup = `DATE_FORMAT(CONVERT_TZ(created_at, '+00:00', '${tz}'), '%Y-%u')`;
+        dateSelect = `DATE_FORMAT(CONVERT_TZ(created_at, '+00:00', '${tz}'), '%Y-%u')`;
       } else if (groupBy === 'month') {
-        dateGroup = `DATE_FORMAT(created_at, '%Y-%m')`;
-        dateSelect = `DATE_FORMAT(created_at, '%Y-%m')`;
+        dateGroup = `DATE_FORMAT(CONVERT_TZ(created_at, '+00:00', '${tz}'), '%Y-%m')`;
+        dateSelect = `DATE_FORMAT(CONVERT_TZ(created_at, '+00:00', '${tz}'), '%Y-%m')`;
       } else {
-        dateGroup = `DATE(created_at)`;
-        dateSelect = `DATE(created_at)`;
+        dateGroup = `DATE(CONVERT_TZ(created_at, '+00:00', '${tz}'))`;
+        dateSelect = `DATE(CONVERT_TZ(created_at, '+00:00', '${tz}'))`;
       }
 
       // Get clicks by date
@@ -275,8 +283,8 @@ export class DashboardService {
           ${dateSelect} as date_group,
           COUNT(*) as clicks
         FROM clicks
-        WHERE DATE(created_at) >= DATE(?)
-          AND DATE(created_at) <= DATE(?)
+        WHERE DATE(CONVERT_TZ(created_at, '+00:00', '+05:30')) >= ?
+          AND DATE(CONVERT_TZ(created_at, '+00:00', '+05:30')) <= ?
         GROUP BY ${dateGroup}
         ORDER BY date_group ASC
         `,
@@ -289,8 +297,8 @@ export class DashboardService {
           ${dateSelect} as date_group,
           COUNT(*) as conversions
         FROM conversions
-        WHERE DATE(created_at) >= DATE(?)
-          AND DATE(created_at) <= DATE(?)
+        WHERE DATE(CONVERT_TZ(created_at, '+00:00', '+05:30')) >= ?
+          AND DATE(CONVERT_TZ(created_at, '+00:00', '+05:30')) <= ?
         GROUP BY ${dateGroup}
         ORDER BY date_group ASC
         `,
@@ -319,8 +327,8 @@ export class DashboardService {
   async getTopAffiliates(filters = {}) {
     try {
       const limit = parseInt(filters.limit || 5);
-      const dateFrom = filters.date_from || this.getDateBoundaries().monthStart.split(' ')[0];
-      const dateTo = filters.date_to || this.getDateBoundaries().todayEnd.split('T')[0];
+      const dateFrom = filters.date_from || this.getDateBoundaries().monthStart;
+      const dateTo = filters.date_to || this.getDateBoundaries().todayStart;
 
       // Get top affiliates
       const [rows] = await pool.query(
@@ -330,8 +338,8 @@ export class DashboardService {
           COUNT(DISTINCT conv.id) as conversions
         FROM publishers p
         LEFT JOIN conversions conv ON conv.publisher_id = p.id
-          AND DATE(conv.created_at) >= DATE(?)
-          AND DATE(conv.created_at) <= DATE(?)
+          AND DATE(CONVERT_TZ(conv.created_at, '+00:00', '+05:30')) >= ?
+          AND DATE(CONVERT_TZ(conv.created_at, '+00:00', '+05:30')) <= ?
         WHERE p.status != 'suspended'
         GROUP BY p.id, p.company_name, p.first_name, p.email
         HAVING conversions > 0
@@ -345,8 +353,8 @@ export class DashboardService {
       const [totalRows] = await pool.query(
         `SELECT COUNT(DISTINCT conv.id) as total_conversions
         FROM conversions conv
-        WHERE DATE(conv.created_at) >= DATE(?)
-          AND DATE(conv.created_at) <= DATE(?)
+        WHERE DATE(CONVERT_TZ(conv.created_at, '+00:00', '+05:30')) >= ?
+          AND DATE(CONVERT_TZ(conv.created_at, '+00:00', '+05:30')) <= ?
         `,
         [dateFrom, dateTo]
       );
@@ -535,7 +543,7 @@ export class DashboardService {
       const [revenueTodayRows] = await pool.query(
         `SELECT COALESCE(SUM(amount), 0) as revenue
         FROM conversions
-        WHERE DATE(created_at) = DATE(?)
+        WHERE DATE(CONVERT_TZ(created_at, '+00:00', '+05:30')) = ?
         AND status = 'approved'
         `,
         [dates.todayStart]
@@ -544,7 +552,7 @@ export class DashboardService {
       const [revenueYesterdayRows] = await pool.query(
         `SELECT COALESCE(SUM(amount), 0) as revenue
         FROM conversions
-        WHERE DATE(created_at) = DATE(?)
+        WHERE DATE(CONVERT_TZ(created_at, '+00:00', '+05:30')) = ?
         AND status = 'approved'
         `,
         [dates.yesterdayStart]

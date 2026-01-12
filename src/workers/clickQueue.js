@@ -16,7 +16,7 @@ async function updateDailyStats(offerId, publisherId) {
            VALUES (?, CURDATE(), 1)
            ON DUPLICATE KEY UPDATE 
              clicks = daily_offer_stats.clicks + 1,
-             updated_at = NOW()`,
+             updated_at = UTC_TIMESTAMP()`,
             [offerId]
         );
     } catch (error) {

@@ -238,7 +238,7 @@ export class PostbackService {
           `INSERT INTO conversions (
             conversion_uuid, click_uuid, offer_id, publisher_id, publisher_offer_id,
             rcid, status, amount, payout, ip, postback_payload, timestamp, created_at, updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW(), NOW())`,
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, UTC_TIMESTAMP(), UTC_TIMESTAMP(), UTC_TIMESTAMP())`,
           [
             conversionUuid,
             click ? click.click_uuid : null,
@@ -268,7 +268,7 @@ export class PostbackService {
           `INSERT INTO conversions (
             conversion_uuid, click_uuid, offer_id, publisher_id, publisher_offer_id,
             rcid, status, amount, payout, ip, postback_payload, timestamp, created_at, updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW(), NOW())`,
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, UTC_TIMESTAMP(), UTC_TIMESTAMP(), UTC_TIMESTAMP())`,
           [
             conversionUuid,
             click ? click.click_uuid : null,
@@ -300,7 +300,7 @@ export class PostbackService {
           `INSERT INTO conversions (
             conversion_uuid, click_uuid, offer_id, publisher_id, publisher_offer_id,
             rcid, status, amount, payout, ip, postback_payload, timestamp, created_at, updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW(), NOW())`,
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, UTC_TIMESTAMP(), UTC_TIMESTAMP(), UTC_TIMESTAMP())`,
           [
             conversionUuid,
             click ? click.click_uuid : null,
@@ -330,7 +330,7 @@ export class PostbackService {
         `INSERT INTO conversions (
           conversion_uuid, click_uuid, offer_id, publisher_id, publisher_offer_id,
           rcid, status, amount, payout, ip, postback_payload, timestamp, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW(), NOW())`,
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, UTC_TIMESTAMP(), UTC_TIMESTAMP(), UTC_TIMESTAMP())`,
         [
           conversionUuid,
           click ? click.click_uuid : null,
@@ -428,18 +428,23 @@ export class PostbackService {
 
   async updateDailyStats(offerId, revenue, payout) {
     try {
-      const today = new Date().toISOString().split('T')[0];
+      // Calculate today in IST (UTC+5:30) for business logic
+      const now = new Date();
+      // Add 5.5 hours to get IST time
+      const istTime = new Date(now.getTime() + (5.5 * 60 * 60 * 1000));
+      const today = istTime.toISOString().split('T')[0];
+
       const profit = revenue - payout;
 
       await pool.query(
         `INSERT INTO daily_offer_stats (offer_id, day, conversions, revenue, payout, profit, created_at, updated_at)
-         VALUES (?, ?, 1, ?, ?, ?, NOW(), NOW())
+         VALUES (?, ?, 1, ?, ?, ?, UTC_TIMESTAMP(), UTC_TIMESTAMP())
          ON DUPLICATE KEY UPDATE 
            conversions = daily_offer_stats.conversions + 1,
            revenue = daily_offer_stats.revenue + VALUES(revenue),
            payout = daily_offer_stats.payout + VALUES(payout),
            profit = daily_offer_stats.profit + VALUES(profit),
-           updated_at = NOW()`,
+           updated_at = UTC_TIMESTAMP()`,
         [offerId, today, revenue, payout, profit]
       );
     } catch (error) {
@@ -456,15 +461,18 @@ export class PostbackService {
     const capAmount = parseFloat(assignment.capping_budget_amount);
     if (capAmount <= 0) return false;
 
+    // Use IST (UTC+05:30) for timezone conversions
+    const tz = '+05:30';
+
     let dateCondition = '';
     if (duration === 'hour') {
-      dateCondition = 'HOUR(created_at) = HOUR(NOW()) AND DATE(created_at) = CURDATE()';
+      dateCondition = `DATE(CONVERT_TZ(created_at, '+00:00', '${tz}')) = DATE(CONVERT_TZ(UTC_TIMESTAMP(), '+00:00', '${tz}')) AND HOUR(CONVERT_TZ(created_at, '+00:00', '${tz}')) = HOUR(CONVERT_TZ(UTC_TIMESTAMP(), '+00:00', '${tz}'))`;
     } else if (duration === 'day') {
-      dateCondition = 'DATE(created_at) = CURDATE()';
+      dateCondition = `DATE(CONVERT_TZ(created_at, '+00:00', '${tz}')) = DATE(CONVERT_TZ(UTC_TIMESTAMP(), '+00:00', '${tz}'))`;
     } else if (duration === 'week') {
-      dateCondition = 'YEARWEEK(created_at, 1) = YEARWEEK(NOW(), 1)';
+      dateCondition = `YEARWEEK(CONVERT_TZ(created_at, '+00:00', '${tz}'), 1) = YEARWEEK(CONVERT_TZ(UTC_TIMESTAMP(), '+00:00', '${tz}'), 1)`;
     } else if (duration === 'month') {
-      dateCondition = 'YEAR(created_at) = YEAR(NOW()) AND MONTH(created_at) = MONTH(NOW())';
+      dateCondition = `YEAR(CONVERT_TZ(created_at, '+00:00', '${tz}')) = YEAR(CONVERT_TZ(UTC_TIMESTAMP(), '+00:00', '${tz}')) AND MONTH(CONVERT_TZ(created_at, '+00:00', '${tz}')) = MONTH(CONVERT_TZ(UTC_TIMESTAMP(), '+00:00', '${tz}'))`;
     } else {
       return false;
     }
@@ -489,15 +497,18 @@ export class PostbackService {
     const capCount = parseInt(assignment.capping_conversions_amount);
     if (capCount <= 0) return false;
 
+    // Use IST (UTC+05:30) for timezone conversions
+    const tz = '+05:30';
+
     let dateCondition = '';
     if (duration === 'hour') {
-      dateCondition = 'HOUR(created_at) = HOUR(NOW()) AND DATE(created_at) = CURDATE()';
+      dateCondition = `DATE(CONVERT_TZ(created_at, '+00:00', '${tz}')) = DATE(CONVERT_TZ(UTC_TIMESTAMP(), '+00:00', '${tz}')) AND HOUR(CONVERT_TZ(created_at, '+00:00', '${tz}')) = HOUR(CONVERT_TZ(UTC_TIMESTAMP(), '+00:00', '${tz}'))`;
     } else if (duration === 'day') {
-      dateCondition = 'DATE(created_at) = CURDATE()';
+      dateCondition = `DATE(CONVERT_TZ(created_at, '+00:00', '${tz}')) = DATE(CONVERT_TZ(UTC_TIMESTAMP(), '+00:00', '${tz}'))`;
     } else if (duration === 'week') {
-      dateCondition = 'YEARWEEK(created_at, 1) = YEARWEEK(NOW(), 1)';
+      dateCondition = `YEARWEEK(CONVERT_TZ(created_at, '+00:00', '${tz}'), 1) = YEARWEEK(CONVERT_TZ(UTC_TIMESTAMP(), '+00:00', '${tz}'), 1)`;
     } else if (duration === 'month') {
-      dateCondition = 'YEAR(created_at) = YEAR(NOW()) AND MONTH(created_at) = MONTH(NOW())';
+      dateCondition = `YEAR(CONVERT_TZ(created_at, '+00:00', '${tz}')) = YEAR(CONVERT_TZ(UTC_TIMESTAMP(), '+00:00', '${tz}')) AND MONTH(CONVERT_TZ(created_at, '+00:00', '${tz}')) = MONTH(CONVERT_TZ(UTC_TIMESTAMP(), '+00:00', '${tz}'))`;
     } else {
       return false;
     }
@@ -758,15 +769,19 @@ export class PostbackService {
     }
 
     const now = new Date();
-    const currentDate = now.toISOString().split('T')[0]; // YYYY-MM-DD
-    const currentTime = now.toTimeString().split(' ')[0]; // HH:MM:SS
+    // Calculate IST time for business logic checks
+    const istTime = new Date(now.getTime() + (5.5 * 60 * 60 * 1000));
+    const currentDate = istTime.toISOString().split('T')[0]; // YYYY-MM-DD in IST
+    const currentTime = istTime.toISOString().split('T')[1].split('.')[0]; // HH:MM:SS in IST
 
     // Check if offer has expired (end_date passed)
     if (offer.end_date) {
-      const endDate = new Date(offer.end_date);
-      endDate.setHours(23, 59, 59, 999); // End of day
+      const endDate = new Date(offer.end_date); // Assuming stored as YYYY-MM-DD
+      // We interpret stored date as end of that day in IST
+      endDate.setHours(23, 59, 59, 999);
 
-      if (now > endDate) {
+      // Compare YYYY-MM-DD strings to avoid offset confusion
+      if (currentDate > offer.end_date) {
         return {
           valid: false,
           message: `Offer has expired. End date: ${offer.end_date}`,
@@ -777,10 +792,8 @@ export class PostbackService {
 
     // Check if offer hasn't started yet (start_date in future)
     if (offer.start_date) {
-      const startDate = new Date(offer.start_date);
-      startDate.setHours(0, 0, 0, 0); // Start of day
-
-      if (now < startDate) {
+      // Compare YYYY-MM-DD strings
+      if (currentDate < offer.start_date) {
         return {
           valid: false,
           message: `Offer has not started yet. Start date: ${offer.start_date}`,
@@ -790,6 +803,7 @@ export class PostbackService {
     }
 
     // Check time restrictions if both start_time and end_time are set
+    // Assuming start_time and end_time are stored as 'HH:MM:SS' strings
     if (offer.start_time && offer.end_time) {
       const startTime = offer.start_time;
       const endTime = offer.end_time;
@@ -840,9 +854,11 @@ export class PostbackService {
     const capType = offer.capping_type || 'none';
     if (capType === 'none') return false;
 
+    const tz = '+05:30';
+
     if (capType === 'daily' && offer.daily_cap && offer.daily_cap > 0) {
       const [rows] = await pool.query(
-        'SELECT COUNT(*) AS cnt FROM conversions WHERE offer_id = ? AND DATE(created_at) = CURDATE()',
+        `SELECT COUNT(*) AS cnt FROM conversions WHERE offer_id = ? AND DATE(CONVERT_TZ(created_at, '+00:00', '${tz}')) = DATE(CONVERT_TZ(UTC_TIMESTAMP(), '+00:00', '${tz}'))`,
         [offer.id]
       );
       const count = parseInt((Array.isArray(rows) ? rows[0] : rows).cnt || 0);
@@ -851,7 +867,7 @@ export class PostbackService {
 
     if (capType === 'monthly' && offer.monthly_cap && offer.monthly_cap > 0) {
       const [rows] = await pool.query(
-        'SELECT COUNT(*) AS cnt FROM conversions WHERE offer_id = ? AND YEAR(created_at)=YEAR(NOW()) AND MONTH(created_at)=MONTH(NOW())',
+        `SELECT COUNT(*) AS cnt FROM conversions WHERE offer_id = ? AND YEAR(CONVERT_TZ(created_at, '+00:00', '${tz}')) = YEAR(CONVERT_TZ(UTC_TIMESTAMP(), '+00:00', '${tz}')) AND MONTH(CONVERT_TZ(created_at, '+00:00', '${tz}')) = MONTH(CONVERT_TZ(UTC_TIMESTAMP(), '+00:00', '${tz}'))`,
         [offer.id]
       );
       const count = parseInt((Array.isArray(rows) ? rows[0] : rows).cnt || 0);
@@ -860,7 +876,7 @@ export class PostbackService {
 
     if (capType === 'weekly' && offer.total_cap && offer.total_cap > 0) {
       const [rows] = await pool.query(
-        'SELECT COUNT(*) AS cnt FROM conversions WHERE offer_id = ? AND YEARWEEK(created_at,1)=YEARWEEK(NOW(),1)',
+        `SELECT COUNT(*) AS cnt FROM conversions WHERE offer_id = ? AND YEARWEEK(CONVERT_TZ(created_at, '+00:00', '${tz}'), 1) = YEARWEEK(CONVERT_TZ(UTC_TIMESTAMP(), '+00:00', '${tz}'), 1)`,
         [offer.id]
       );
       const count = parseInt((Array.isArray(rows) ? rows[0] : rows).cnt || 0);

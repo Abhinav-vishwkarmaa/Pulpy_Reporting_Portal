@@ -69,7 +69,7 @@ export class AssignmentService {
             capping_conversions_duration, capping_conversions_amount,
             callback_url, destination_url,
             notes, status, assigned_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, UTC_TIMESTAMP())
           ON DUPLICATE KEY UPDATE 
             payout_override = VALUES(payout_override),
             conversion_approval_percentage = VALUES(conversion_approval_percentage),
@@ -165,7 +165,7 @@ export class AssignmentService {
         publisher_id, offer_id, payout_override, cap_override, 
         callback_url, destination_url,
         notes, status, assigned_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, UTC_TIMESTAMP())
       ON DUPLICATE KEY UPDATE 
         payout_override = VALUES(payout_override),
         cap_override = VALUES(cap_override),

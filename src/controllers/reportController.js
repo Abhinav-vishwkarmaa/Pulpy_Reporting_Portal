@@ -23,6 +23,7 @@ export class ReportController {
       if (request.query.google_id) filters.google_id = request.query.google_id;
       if (request.query.android_id) filters.android_id = request.query.android_id;
       if (request.query.hour !== undefined) filters.hour = parseInt(request.query.hour);
+      if (request.query.search) filters.search = request.query.search;
 
       const summary = await reportService.getSummary(filters);
 
@@ -66,8 +67,44 @@ export class ReportController {
       if (request.query.advertiser_id) filters.advertiser_id = parseInt(request.query.advertiser_id);
       if (request.query.page) filters.page = parseInt(request.query.page);
       if (request.query.limit) filters.limit = parseInt(request.query.limit);
+      if (request.query.search) filters.search = request.query.search;
+      if (request.query.export) filters.export = request.query.export;
+      if (request.query.groupBy) filters.groupBy = request.query.groupBy;
+      if (request.query.columns) filters.columns = request.query.columns;
 
       const result = await reportService.getDetailed(filters);
+
+      // Handle CSV Export
+      if (result.isExport) {
+        // Here we build the CSV string or stream it.
+        // For simplicity with Fastify, we'll build a string and send distinct headers.
+        // For true styling, we'd use 'csv-stringify' or similar.
+
+        reply.header('Content-Type', 'text/csv');
+        reply.header('Content-Disposition', `attachment; filename="reports-${new Date().toISOString().split('T')[0]}.csv"`);
+
+        // Simple CSV Builder
+        const rows = result.data;
+        if (!rows || rows.length === 0) {
+          return reply.send("No Data");
+        }
+
+        const headers = Object.keys(rows[0]);
+        const csvContent = [
+          headers.join(','),
+          ...rows.map(row => headers.map(header => {
+            const val = row[header];
+            if (val === null || val === undefined) return '';
+            // basic escaping
+            if (typeof val === 'string' && (val.includes(',') || val.includes('"') || val.includes('\n'))) {
+              return `"${val.replace(/"/g, '""')}"`;
+            }
+            return val;
+          }).join(','))
+        ].join('\n');
+
+        return reply.send(csvContent);
+      }
 
       return reply.send({
         success: true,

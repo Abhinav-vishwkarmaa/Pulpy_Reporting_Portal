@@ -354,7 +354,7 @@ class OfferService {
         return this.getOfferById(id);
       }
 
-      fields.push('updated_at = CURRENT_TIMESTAMP');
+      fields.push('updated_at = UTC_TIMESTAMP()');
       params.push(id);
 
       const sql = `UPDATE offers SET ${fields.join(', ')} WHERE id = ?`;
@@ -375,7 +375,7 @@ class OfferService {
     return Array.isArray(rows) ? rows[0] : rows;
   }
 
-  async getOfferByIdWithDetails(id) {
+  async getOfferByIdWithDetails(id, timezone = '+05:30') {
     try {
       // Get offer details
       const offer = await this.getOfferById(id);
@@ -410,7 +410,18 @@ class OfferService {
         advertiser = Array.isArray(advertiserRows) ? advertiserRows[0] : advertiserRows;
       }
 
-      // Get assigned publishers (assignments)
+      return {
+        ...parsedOffer,
+        advertiser,
+      };
+    } catch (error) {
+      logger.error('OfferService.getOfferByIdWithDetails error:', error);
+      throw error;
+    }
+  }
+
+  async getOfferAssignments(id) {
+    try {
       const [assignmentsRows] = await pool.query(
         `SELECT po.*, 
                 p.id as publisher_id,
@@ -427,8 +438,7 @@ class OfferService {
       );
       const assignments = Array.isArray(assignmentsRows) ? assignmentsRows : [];
 
-      // Format assignments
-      const formattedAssignments = assignments.map(assignment => ({
+      return assignments.map(assignment => ({
         id: assignment.id,
         publisher_id: assignment.publisher_id,
         publisher_email: assignment.publisher_email,
@@ -453,8 +463,14 @@ class OfferService {
         status: assignment.status,
         assigned_at: assignment.assigned_at,
       }));
+    } catch (error) {
+      logger.error('OfferService.getOfferAssignments error:', error);
+      throw error;
+    }
+  }
 
-      // Get statistics
+  async getOfferStats(id) {
+    try {
       const [statsRows] = await pool.query(
         `SELECT 
           (SELECT COUNT(*) FROM clicks WHERE offer_id = o.id) as total_clicks,
@@ -473,12 +489,31 @@ class OfferService {
       );
       const stats = Array.isArray(statsRows) ? statsRows[0] : statsRows;
 
-      // Calculate conversion rate
       const conversionRate = stats.total_clicks > 0
         ? ((stats.total_conversions || 0) / stats.total_clicks) * 100
         : 0;
 
-      // Get recent clicks (last 50)
+      return {
+        total_clicks: parseInt(stats.total_clicks || 0),
+        unique_publishers: parseInt(stats.unique_publishers || 0),
+        total_impressions: parseInt(stats.total_impressions || 0),
+        total_conversions: parseInt(stats.total_conversions || 0),
+        approved_conversions: parseInt(stats.approved_conversions || 0),
+        pending_conversions: parseInt(stats.pending_conversions || 0),
+        rejected_conversions: parseInt(stats.rejected_conversions || 0),
+        total_revenue: parseFloat(stats.total_revenue || 0),
+        total_payout: parseFloat(stats.total_payout || 0),
+        total_profit: parseFloat(stats.total_profit || 0),
+        conversion_rate: parseFloat(conversionRate.toFixed(2)),
+      };
+    } catch (error) {
+      logger.error('OfferService.getOfferStats error:', error);
+      throw error;
+    }
+  }
+
+  async getOfferRecentClicks(id) {
+    try {
       const [recentClicksRows] = await pool.query(
         `SELECT c.*, 
                 p.email as publisher_email,
@@ -490,9 +525,15 @@ class OfferService {
          LIMIT 50`,
         [id]
       );
-      const recentClicks = Array.isArray(recentClicksRows) ? recentClicksRows : [];
+      return Array.isArray(recentClicksRows) ? recentClicksRows : [];
+    } catch (error) {
+      logger.error('OfferService.getOfferRecentClicks error:', error);
+      throw error;
+    }
+  }
 
-      // Get recent conversions (last 50)
+  async getOfferRecentConversions(id) {
+    try {
       const [recentConversionsRows] = await pool.query(
         `SELECT conv.*,
                 p.email as publisher_email,
@@ -506,9 +547,15 @@ class OfferService {
          LIMIT 50`,
         [id]
       );
-      const recentConversions = Array.isArray(recentConversionsRows) ? recentConversionsRows : [];
+      return Array.isArray(recentConversionsRows) ? recentConversionsRows : [];
+    } catch (error) {
+      logger.error('OfferService.getOfferRecentConversions error:', error);
+      throw error;
+    }
+  }
 
-      // Get clicks by publisher
+  async getOfferPublisherStats(id) {
+    try {
       const [clicksByPublisherRows] = await pool.query(
         `SELECT 
           c.publisher_id,
@@ -526,34 +573,67 @@ class OfferService {
         ORDER BY click_count DESC`,
         [id]
       );
-      const clicksByPublisher = Array.isArray(clicksByPublisherRows) ? clicksByPublisherRows : [];
-
-      return {
-        ...parsedOffer,
-        advertiser,
-        assignments: formattedAssignments,
-        statistics: {
-          total_clicks: parseInt(stats.total_clicks || 0),
-          unique_publishers: parseInt(stats.unique_publishers || 0),
-          total_impressions: parseInt(stats.total_impressions || 0),
-          total_conversions: parseInt(stats.total_conversions || 0),
-          approved_conversions: parseInt(stats.approved_conversions || 0),
-          pending_conversions: parseInt(stats.pending_conversions || 0),
-          rejected_conversions: parseInt(stats.rejected_conversions || 0),
-          total_revenue: parseFloat(stats.total_revenue || 0),
-          total_payout: parseFloat(stats.total_payout || 0),
-          total_profit: parseFloat(stats.total_profit || 0),
-          conversion_rate: parseFloat(conversionRate.toFixed(2)),
-        },
-        recent_clicks: recentClicks,
-        recent_conversions: recentConversions,
-        clicks_by_publisher: clicksByPublisher,
-      };
+      return Array.isArray(clicksByPublisherRows) ? clicksByPublisherRows : [];
     } catch (error) {
-      logger.error('OfferService.getOfferByIdWithDetails error:', error);
+      logger.error('OfferService.getOfferPublisherStats error:', error);
       throw error;
     }
   }
+
+  async getOfferDailyStats(id, timezone = '+05:30') {
+    try {
+      const [dailyClicksRows] = await pool.query(
+        `SELECT 
+           CAST(DATE(CONVERT_TZ(created_at, '+00:00', ?)) AS CHAR) as date, 
+           COUNT(*) as count
+         FROM clicks 
+         WHERE offer_id = ? 
+           AND created_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 90 DAY)
+         GROUP BY DATE(CONVERT_TZ(created_at, '+00:00', ?))
+         ORDER BY date DESC`,
+        [timezone, id, timezone]
+      );
+
+      const [dailyConversionsRows] = await pool.query(
+        `SELECT 
+           CAST(DATE(CONVERT_TZ(created_at, '+00:00', ?)) AS CHAR) as date, 
+           COUNT(*) as count
+         FROM conversions 
+         WHERE offer_id = ? 
+           AND created_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 90 DAY)
+         GROUP BY DATE(CONVERT_TZ(created_at, '+00:00', ?))
+         ORDER BY date DESC`,
+        [timezone, id, timezone]
+      );
+
+      // Merge daily stats
+      const dailyStatsMap = new Map();
+
+      (Array.isArray(dailyClicksRows) ? dailyClicksRows : []).forEach(row => {
+        const dateStr = row.date;
+        if (!dailyStatsMap.has(dateStr)) {
+          dailyStatsMap.set(dateStr, { date: dateStr, clicks: 0, conversions: 0 });
+        }
+        dailyStatsMap.get(dateStr).clicks = row.count;
+      });
+
+      (Array.isArray(dailyConversionsRows) ? dailyConversionsRows : []).forEach(row => {
+        const dateStr = row.date;
+        if (!dailyStatsMap.has(dateStr)) {
+          dailyStatsMap.set(dateStr, { date: dateStr, clicks: 0, conversions: 0 });
+        }
+        dailyStatsMap.get(dateStr).conversions = row.count;
+      });
+
+      return Array.from(dailyStatsMap.values())
+        .sort((a, b) => b.date.localeCompare(a.date));
+    } catch (error) {
+      logger.error('OfferService.getOfferDailyStats error:', error);
+      throw error;
+    }
+  }
+
+
 
   async listOffers(filters = {}) {
     const conditions = [];
@@ -654,7 +734,7 @@ class OfferService {
       }
 
       const [result] = await pool.query(
-        'UPDATE offers SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+        'UPDATE offers SET status = ?, updated_at = UTC_TIMESTAMP() WHERE id = ?',
         [status, id]
       );
       if (!result.affectedRows) {

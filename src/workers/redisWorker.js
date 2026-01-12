@@ -186,7 +186,7 @@ async function processPendingConversions(clicks) {
                     `INSERT INTO conversions (
                       conversion_uuid, click_uuid, offer_id, publisher_id, publisher_offer_id,
                       rcid, status, amount, payout, ip, postback_payload, timestamp, created_at, updated_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, UTC_TIMESTAMP(), UTC_TIMESTAMP())`,
                     [
                         uuidv4(), // Generate new DB internal ID or use one if we generated?
                         conv.click_uuid, conv.offer_id, conv.publisher_id, conv.publisher_offer_id,

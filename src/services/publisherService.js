@@ -14,7 +14,7 @@ export class PublisherService {
       const [result] = await pool.query(
         `INSERT INTO publishers (
           email, first_name, company_name, country, password_hash, global_postback_url, status, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, 'active', NOW(), NOW())`,
+        ) VALUES (?, ?, ?, ?, ?, ?, 'active', UTC_TIMESTAMP(), UTC_TIMESTAMP())`,
         [
           data.email,
           data.first_name || null,
@@ -24,7 +24,7 @@ export class PublisherService {
           data.global_postback_url || null,
         ]
       );
-      
+
       const insertId = result.insertId || result[0]?.insertId;
       const [rows] = await pool.query(
         'SELECT id, email, first_name, company_name, country, global_postback_url, status, created_at, updated_at FROM publishers WHERE id = ?',
@@ -41,7 +41,7 @@ export class PublisherService {
       throw error;
     }
   }
-  
+
   async findById(id) {
     const [rows] = await pool.query(
       'SELECT id, email, first_name, company_name, country, global_postback_url, status, created_at, updated_at FROM publishers WHERE id = ?',
@@ -54,7 +54,7 @@ export class PublisherService {
     }
     return publisher;
   }
-  
+
   async findByEmail(email) {
     const [rows] = await pool.query(
       'SELECT id, email, first_name, company_name, country, global_postback_url, status, created_at, updated_at FROM publishers WHERE email = ?',
@@ -67,13 +67,13 @@ export class PublisherService {
     }
     return publisher;
   }
-  
+
   // Internal method to get publisher with password_hash (for authentication)
   async findByEmailWithPassword(email) {
     const [rows] = await pool.query('SELECT * FROM publishers WHERE email = ?', [email]);
     return Array.isArray(rows) ? rows[0] : rows;
   }
-  
+
   async findAll(filters = {}) {
     let where = ' WHERE 1=1';
     const params = [];
@@ -126,40 +126,40 @@ export class PublisherService {
       },
     };
   }
-  
+
   async update(id, data) {
     const fields = [];
     const params = [];
-    
+
     // Handle password hashing separately
     if (data.password !== undefined) {
       const passwordHash = await bcrypt.hash(data.password, 10);
       fields.push(`password_hash = ?`);
       params.push(passwordHash);
     }
-    
+
     // Handle other allowed fields
-    const allowedFields = ['email', 'first_name', 'company_name', 'country', 'global_postback_url','status'];
+    const allowedFields = ['email', 'first_name', 'company_name', 'country', 'global_postback_url', 'status'];
     Object.keys(data).forEach((key) => {
       if (data[key] !== undefined && allowedFields.includes(key) && key !== 'password') {
         fields.push(`${key} = ?`);
         params.push(data[key]);
       }
     });
-    
+
     if (fields.length === 0) {
       return this.findById(id);
     }
-    
-    fields.push(`updated_at = NOW()`);
+
+    fields.push(`updated_at = UTC_TIMESTAMP()`);
     params.push(id);
-    
+
     const query = `UPDATE publishers SET ${fields.join(', ')} WHERE id = ?`;
     await pool.query(query, params);
     // Return publisher without password_hash
     return this.findById(id);
   }
-  
+
   async getStats() {
     const [rows] = await pool.query(`
       SELECT 
@@ -174,7 +174,7 @@ export class PublisherService {
 
   async softDelete(id) {
     const [result] = await pool.query(
-      `UPDATE publishers SET status = 'suspended', updated_at = NOW() WHERE id = ?`,
+      `UPDATE publishers SET status = 'suspended', updated_at = UTC_TIMESTAMP() WHERE id = ?`,
       [id]
     );
     if ((result.affectedRows || result.affectedRows === 0) && result.affectedRows === 0) {

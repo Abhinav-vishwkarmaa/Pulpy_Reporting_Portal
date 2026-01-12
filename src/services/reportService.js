@@ -54,8 +54,117 @@ export class ReportService {
       const limit = parseInt(filters.limit || 50);
       const offset = (page - 1) * limit;
 
-      let query = `
-        SELECT 
+      // Check if this is an aggregated report request
+      const groupBy = filters.groupBy ? (Array.isArray(filters.groupBy) ? filters.groupBy : filters.groupBy.split(',')) : [];
+      const columns = filters.columns ? (Array.isArray(filters.columns) ? filters.columns : filters.columns.split(',')) : [];
+
+      // Dimension Mapping
+      const dimMap = {
+        'offer_id': 'o.id as offer_id, o.name as offer_name',
+        'publisher_id': 'p.id as publisher_id, p.company_name as publisher_name, p.email as publisher_email',
+        'advertiser_id': 'o.advertiser_id',
+        'ip': 'c.ip',
+        'country': 'c.country',
+        'isp': 'c.isp', // Will return NULL if column missing, handled via try/catch in specific selection if needed, or assume NULL for now. 
+        // To be safe against "Unknown column", usually we'd select NULL if we know it doesn't exist.
+        // Assuming schema matches what's in DB. If c.isp doesn't exist, this fails. 
+        // I will use NULL aliases for now as they are missing in schema.
+        'city': 'NULL as city', // c.city missing
+        'region': 'NULL as region', // c.region missing
+        'tid': 'c.tid',
+        'date': "DATE(CONVERT_TZ(c.created_at, '+00:00', '+05:30'))",
+        'hour': "HOUR(CONVERT_TZ(c.created_at, '+00:00', '+05:30'))",
+        'user_agent': 'c.user_agent',
+        'device_type': 'c.device_type',
+        'os': 'c.os',
+        'browser': 'c.browser',
+        'domain': 'c.domain',
+        'click_uuid': 'c.click_uuid',
+        'rcid': 'c.rcid',
+        'referer': 'c.referrer'
+      };
+
+      // Safe column selector
+      const getDimCol = (key) => {
+        if (key === 'isp') return 'NULL as isp';
+        if (key === 'city') return 'NULL as city';
+        if (key === 'region') return 'NULL as region';
+        return dimMap[key] || 'NULL';
+      };
+
+      if (groupBy.length > 0) {
+        // --- AGGREGATED REPORT MODE ---
+        let selects = [];
+        let groups = [];
+        let orderBy = [];
+
+        groupBy.forEach(dim => {
+          if (dimMap[dim]) {
+            selects.push(`${dim === 'date' ? dimMap[dim] + ' as date_group' : (dim === 'hour' ? dimMap[dim] + ' as hour_group' : getDimCol(dim))}`);
+
+            // Group By Clause
+            if (dim === 'date') groups.push(dimMap['date']);
+            else if (dim === 'hour') groups.push(dimMap['hour']);
+            else if (dim === 'offer_id') { groups.push('o.id'); groups.push('o.name'); }
+            else if (dim === 'publisher_id') { groups.push('p.id'); groups.push('p.company_name'); groups.push('p.email'); }
+            else if (dim === 'advertiser_id') groups.push('o.advertiser_id');
+            else if (dim === 'isp' || dim === 'city' || dim === 'region') { } // Cannot group by NULL literals easily or pointless
+            else groups.push(dimMap[dim].split(' as ')[0]);
+          }
+        });
+
+        // Metrics
+        selects.push('COUNT(DISTINCT c.id) as clicks'); // Total clicks
+        selects.push('COUNT(DISTINCT c.ip) as unique_clicks'); // Unique IP
+        // Impressions not linked to clicks 1:1, so generally 0 in this join unless we switch to UNION.
+        selects.push('0 as impressions');
+        selects.push('COUNT(DISTINCT conv.id) as conversions');
+        selects.push('COALESCE(SUM(conv.amount), 0) as revenue'); // Offer Price * Conversions roughly
+        selects.push('COALESCE(SUM(conv.payout), 0) as payout');
+        selects.push('COALESCE(SUM(conv.amount - conv.payout), 0) as profit');
+
+        let query = `SELECT ${selects.join(', ')} 
+                     FROM clicks c
+                     LEFT JOIN offers o ON c.offer_id = o.id
+                     LEFT JOIN publishers p ON c.publisher_id = p.id
+                     LEFT JOIN conversions conv ON conv.click_uuid = c.click_uuid
+                     WHERE 1=1 `;
+
+        const filtersBuild = this.buildWhereClause(filters);
+        query += filtersBuild.clause;
+
+        if (groups.length > 0) {
+          query += ` GROUP BY ${groups.join(', ')}`;
+        }
+
+        const countQuery = `SELECT COUNT(*) as total FROM (${query}) as agg`; // Inefficient but works for dynamic grouping
+
+        const [countRows] = await pool.query(countQuery, filtersBuild.params);
+        const total = countRows[0]?.total || 0;
+
+        // --- EXPORT LOGIC ---
+        if (filters.export === 'csv' || filters.export === 'true') {
+          const exportQuery = query + ` LIMIT ? OFFSET ?`;
+          const [exportRows] = await pool.query(exportQuery, [...filtersBuild.params, 100000, 0]); // Limit large export
+          return { data: exportRows, isExport: true, sql: exportQuery, params: [...filtersBuild.params, 100000, 0] };
+        }
+
+        query += ` LIMIT ? OFFSET ?`;
+        const [rows] = await pool.query(query, [...filtersBuild.params, limit, offset]);
+
+        return {
+          data: rows,
+          pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
+          isAggregated: true
+        };
+
+      } else {
+        // --- DETAILED LOG MODE (Existing logic but with dynamic columns support potential) ---
+        // For now, keep returning full detailed rows as per existing functionality, 
+        // but maybe select specific columns if requested?
+        // The user's image shows "Log Type: All", which is Detailed.
+
+        let selectClause = `
           c.id as click_id,
           c.click_uuid,
           c.offer_id,
@@ -91,46 +200,53 @@ export class ReportService {
           conv.amount as conversion_amount,
           conv.payout as conversion_payout,
           conv.timestamp as conversion_timestamp
-        FROM clicks c
-        LEFT JOIN offers o ON c.offer_id = o.id
-        LEFT JOIN publishers p ON c.publisher_id = p.id
-        LEFT JOIN conversions conv ON conv.click_uuid = c.click_uuid
-        WHERE 1=1
-      `;
+        `;
 
-      const countQuery = `
-        SELECT COUNT(*) as total
-        FROM clicks c
-        LEFT JOIN conversions conv ON conv.click_uuid = c.click_uuid
-        LEFT JOIN offers o ON c.offer_id = o.id
-        WHERE 1=1
-      `;
+        // If columns specified, we COULD filter selectClause, but UI might expect standard shape.
+        // Let's stick to standard detailed view unless we want to optimize.
+        // Given complexity, standard view is safer for "Detailed Reports".
 
-      // Build WHERE clause for both queries
-      const filtersBuild = this.buildWhereClause(filters);
-      query += filtersBuild.clause;
-      const countQueryFinal = countQuery + filtersBuild.clause;
+        let query = `
+          SELECT ${selectClause}
+          FROM clicks c
+          LEFT JOIN offers o ON c.offer_id = o.id
+          LEFT JOIN publishers p ON c.publisher_id = p.id
+          LEFT JOIN conversions conv ON conv.click_uuid = c.click_uuid
+          WHERE 1=1
+        `;
 
-      // Add ordering and pagination
-      query += ' ORDER BY c.created_at DESC LIMIT ? OFFSET ?';
-      const dataParams = [...filtersBuild.params, limit, offset];
+        const countQuery = `
+          SELECT COUNT(*) as total
+          FROM clicks c
+          LEFT JOIN conversions conv ON conv.click_uuid = c.click_uuid
+          LEFT JOIN offers o ON c.offer_id = o.id
+          WHERE 1=1
+        `;
 
-      // Get total count
-      const [countRows] = await pool.query(countQueryFinal, filtersBuild.params);
-      const total = parseInt(countRows[0]?.total || 0);
+        const filtersBuild = this.buildWhereClause(filters);
+        query += filtersBuild.clause;
+        query += ' ORDER BY c.created_at DESC';
 
-      // Get data
-      const [rows] = await pool.query(query, dataParams);
+        // --- EXPORT LOGIC DETAILED ---
+        if (filters.export === 'csv' || filters.export === 'true') {
+          // For detailed export, we might need a much larger limit or Stream
+          query += ' LIMIT 10000 OFFSET 0'; // Cap at 10k for safety or Stream
+          const [exportRows] = await pool.query(query, filtersBuild.params);
+          return { data: exportRows, isExport: true };
+        }
 
-      return {
-        data: rows,
-        pagination: {
-          page,
-          limit,
-          total,
-          totalPages: Math.ceil(total / limit),
-        },
-      };
+        query += ' LIMIT ? OFFSET ?';
+
+        const [countRows] = await pool.query(countQuery + filtersBuild.clause, filtersBuild.params);
+        const total = parseInt(countRows[0]?.total || 0);
+        const [rows] = await pool.query(query, [...filtersBuild.params, limit, offset]);
+
+        return {
+          data: rows,
+          pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
+          isAggregated: false
+        };
+      }
     } catch (error) {
       logger.error('ReportService.getDetailed error:', error);
       throw error;
@@ -142,12 +258,12 @@ export class ReportService {
     const params = [];
 
     if (filters.date_from) {
-      clause += ' AND c.created_at >= ?';
+      clause += ' AND DATE(CONVERT_TZ(c.created_at, \'+00:00\', \'+05:30\')) >= ?';
       params.push(filters.date_from);
     }
 
     if (filters.date_to) {
-      clause += ' AND c.created_at <= ?';
+      clause += ' AND DATE(CONVERT_TZ(c.created_at, \'+00:00\', \'+05:30\')) <= ?';
       params.push(filters.date_to);
     }
 
@@ -217,7 +333,7 @@ export class ReportService {
     }
 
     if (filters.hour !== undefined) {
-      clause += ' AND HOUR(c.created_at) = ?';
+      clause += ' AND HOUR(CONVERT_TZ(c.created_at, \'+00:00\', \'+05:30\')) = ?';
       params.push(filters.hour);
     }
 
@@ -261,6 +377,20 @@ export class ReportService {
       params.push(filters.domain);
     }
 
+    if (filters.search) {
+      const term = `%${filters.search}%`;
+      clause += ` AND (
+        c.click_uuid LIKE ? OR 
+        conv.conversion_uuid LIKE ? OR 
+        o.name LIKE ? OR 
+        p.email LIKE ? OR 
+        p.company_name LIKE ? OR 
+        c.ip LIKE ? OR
+        c.user_agent LIKE ?
+      )`;
+      params.push(term, term, term, term, term, term, term);
+    }
+
     return { clause, params };
   }
 
@@ -276,12 +406,12 @@ export class ReportService {
       const params = [];
 
       if (filters.date_from) {
-        conversionDateCondition += ' AND created_at >= ?';
+        conversionDateCondition += ' AND DATE(CONVERT_TZ(created_at, \'+00:00\', \'+05:30\')) >= ?';
         params.push(filters.date_from);
       }
 
       if (filters.date_to) {
-        conversionDateCondition += ' AND created_at <= ?';
+        conversionDateCondition += ' AND DATE(CONVERT_TZ(created_at, \'+00:00\', \'+05:30\')) <= ?';
         params.push(filters.date_to);
       }
 
