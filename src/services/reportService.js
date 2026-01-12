@@ -539,6 +539,93 @@ export class ReportService {
       throw error;
     }
   }
+
+  async getConversions(filters = {}) {
+    try {
+      const limit = parseInt(filters.limit || 50);
+      const offset = (parseInt(filters.page || 1) - 1) * limit;
+
+      let query = `
+        SELECT 
+          conv.id,
+          conv.conversion_uuid,
+          conv.click_uuid,
+          conv.offer_id,
+          o.name as offer_name,
+          conv.publisher_id,
+          p.company_name as publisher_name,
+          conv.amount,
+          conv.payout,
+          conv.status,
+          conv.ip,
+          conv.created_at,
+          cl.country,
+          cl.region,
+          cl.city,
+          cl.device_type,
+          cl.os,
+          cl.browser
+        FROM conversions conv
+        LEFT JOIN offers o ON conv.offer_id = o.id
+        LEFT JOIN publishers p ON conv.publisher_id = p.id
+        LEFT JOIN clicks cl ON conv.click_uuid = cl.click_uuid
+        WHERE 1=1
+      `;
+
+      const params = [];
+
+      if (filters.date_from) {
+        query += ' AND DATE(CONVERT_TZ(conv.created_at, \'+00:00\', \'+05:30\')) >= ?';
+        params.push(filters.date_from);
+      }
+      if (filters.date_to) {
+        query += ' AND DATE(CONVERT_TZ(conv.created_at, \'+00:00\', \'+05:30\')) <= ?';
+        params.push(filters.date_to);
+      }
+      if (filters.offer_id) {
+        query += ' AND conv.offer_id = ?';
+        params.push(filters.offer_id);
+      }
+      if (filters.publisher_id) {
+        query += ' AND conv.publisher_id = ?';
+        params.push(filters.publisher_id);
+      }
+      if (filters.status) {
+        query += ' AND conv.status = ?';
+        params.push(filters.status);
+      }
+      if (filters.conversion_uuid) {
+        query += ' AND conv.conversion_uuid LIKE ?';
+        params.push(`%${filters.conversion_uuid}%`);
+      }
+      if (filters.click_uuid) {
+        query += ' AND conv.click_uuid LIKE ?';
+        params.push(`%${filters.click_uuid}%`);
+      }
+
+      // Count query
+      const countQuery = `SELECT COUNT(*) as total FROM conversions conv WHERE 1=1 ` + query.split('WHERE 1=1')[1];
+      const [countRows] = await pool.query(countQuery, params);
+      const total = countRows[0]?.total || 0;
+
+      query += ' ORDER BY conv.created_at DESC LIMIT ? OFFSET ?';
+      const [rows] = await pool.query(query, [...params, limit, offset]);
+
+      return {
+        data: rows,
+        pagination: {
+          page: parseInt(filters.page || 1),
+          limit,
+          total,
+          totalPages: Math.ceil(total / limit)
+        }
+      };
+
+    } catch (error) {
+      logger.error('ReportService.getConversions error:', error);
+      throw error;
+    }
+  }
 }
 
 export default new ReportService();

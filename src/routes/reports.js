@@ -24,6 +24,9 @@ async function reportRoutes(fastify, options) {
 
   // Publisher conversion statistics
   fastify.get('/publisher-conversions', reportController.getPublisherConversionStats);
+
+  // Conversion Logs
+  fastify.get('/conversions', reportController.getConversions);
 }
 
 export default reportRoutes;

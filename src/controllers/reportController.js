@@ -136,6 +136,31 @@ export class ReportController {
       return reply.code(500).send(createErrorResponse(error, 500));
     }
   }
+  async getConversions(request, reply) {
+    try {
+      const filters = {};
+
+      if (request.query.page) filters.page = request.query.page;
+      if (request.query.limit) filters.limit = request.query.limit;
+      if (request.query.date_from) filters.date_from = request.query.date_from;
+      if (request.query.date_to) filters.date_to = request.query.date_to;
+      if (request.query.offer_id) filters.offer_id = parseInt(request.query.offer_id);
+      if (request.query.publisher_id) filters.publisher_id = parseInt(request.query.publisher_id);
+      if (request.query.status) filters.status = request.query.status;
+      if (request.query.conversion_uuid) filters.conversion_uuid = request.query.conversion_uuid;
+      if (request.query.click_uuid) filters.click_uuid = request.query.click_uuid;
+
+      const result = await reportService.getConversions(filters);
+
+      return reply.send({
+        success: true,
+        ...result,
+      });
+    } catch (error) {
+      logger.error('ReportController.getConversions error:', error);
+      return reply.code(500).send(createErrorResponse(error, 500));
+    }
+  }
 }
 
 export default new ReportController();
