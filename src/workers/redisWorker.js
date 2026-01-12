@@ -147,7 +147,7 @@ async function bulkInsertClicks(clicks) {
 
     const sql = `INSERT IGNORE INTO clicks (
         click_uuid, offer_id, publisher_id, publisher_offer_id,
-        ip, user_agent, referrer, country, region, city, isp, domain,
+        ip, user_agent, referrer, country, region, city, isp, location, domain,
         device_type, browser, os, os_version, device_brand, device_model,
         source_id, device_id, google_id, android_id, rcid, tid,
         timestamp, created_at
@@ -155,7 +155,7 @@ async function bulkInsertClicks(clicks) {
 
     const values = clicks.map(c => [
         c.click_uuid, c.offer_id, c.publisher_id, c.publisher_offer_id,
-        c.ip, c.user_agent, c.referrer, c.country, c.region || null, c.city || null, c.isp || null, c.domain,
+        c.ip, c.user_agent, c.referrer, c.country, c.region || null, c.city || null, c.isp || null, c.location || null, c.domain,
         c.device_type, c.browser, c.os, c.os_version, c.device_brand, c.device_model,
         c.source_id || null, c.device_id || null, c.google_id || null, c.android_id || null,
         c.rcid || null, c.tid || null,
