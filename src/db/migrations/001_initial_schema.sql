@@ -1,9 +1,11 @@
 -- BNG MIS Reporting Portal - Final Database Schema (MySQL/MariaDB)
 -- This schema includes all migrations applied (001-007)
+-- UTC ENFORCEMENT: All timestamps stored as UTC only. Business logic converts to IST (+05:30) at query time.
 SET NAMES utf8mb4;
 SET time_zone = '+00:00';
 
 -- 1. Admin Users
+-- UTC ENFORCEMENT: All timestamp columns store UTC only. Use UTC_TIMESTAMP() in INSERT/UPDATE statements.
 CREATE TABLE IF NOT EXISTS admin_users (
   id INT AUTO_INCREMENT PRIMARY KEY,
   email VARCHAR(255) NOT NULL UNIQUE,
@@ -144,6 +146,7 @@ CREATE TABLE IF NOT EXISTS publisher_offers (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- 6. Clicks
+-- UTC ENFORCEMENT: timestamp and created_at store UTC only. Business logic uses CONVERT_TZ(created_at, '+00:00', '+05:30')
 CREATE TABLE IF NOT EXISTS clicks (
   id BIGINT AUTO_INCREMENT PRIMARY KEY,
   click_uuid CHAR(36) NOT NULL DEFAULT (UUID()),
@@ -187,6 +190,7 @@ CREATE TABLE IF NOT EXISTS clicks (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- 7. Impressions
+-- UTC ENFORCEMENT: timestamp and created_at store UTC only
 CREATE TABLE IF NOT EXISTS impressions (
   id BIGINT AUTO_INCREMENT PRIMARY KEY,
   imp_uuid CHAR(36) NOT NULL DEFAULT (UUID()),
@@ -205,6 +209,7 @@ CREATE TABLE IF NOT EXISTS impressions (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- 8. Conversions
+-- UTC ENFORCEMENT: timestamp, created_at, updated_at store UTC only. Business logic uses CONVERT_TZ(created_at, '+00:00', '+05:30')
 CREATE TABLE IF NOT EXISTS conversions (
   id BIGINT AUTO_INCREMENT PRIMARY KEY,
   conversion_uuid CHAR(36) NOT NULL DEFAULT (UUID()),
@@ -231,6 +236,7 @@ CREATE TABLE IF NOT EXISTS conversions (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- 9. Daily Offer Stats
+-- UTC ENFORCEMENT: day column stores UTC date. created_at/updated_at store UTC. Use CONVERT_TZ(created_at, '+00:00', '+05:30') for IST display
 CREATE TABLE IF NOT EXISTS daily_offer_stats (
   id BIGINT AUTO_INCREMENT PRIMARY KEY,
   offer_id INT NOT NULL,

@@ -6,10 +6,12 @@ import publisherService from './publisherService.js';
 export class DashboardService {
   /**
    * Get date boundaries for today, yesterday, and MTD
+   * UTC ENFORCEMENT: Manual IST conversion ONLY for business logic display.
+   * Database storage remains UTC, queries use CONVERT_TZ(created_at, '+00:00', '+05:30')
    */
   getDateBoundaries() {
     const now = new Date();
-    // Add 5.5 hours to get IST time
+    // UTC ENFORCEMENT: IST conversion for business logic only
     const istTime = new Date(now.getTime() + (5.5 * 60 * 60 * 1000));
 
     // IST Day start (YYYY-MM-DD)

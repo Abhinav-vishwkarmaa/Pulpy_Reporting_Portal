@@ -125,7 +125,8 @@ async function runWorker() {
             const validMsgIds = validEntries.map(entry => entry.msgId);
             const validClicks = validEntries.map(entry => entry.clickData);
             const clickIdsToCleanup = validEntries.map(entry => entry.clickData.click_uuid);
-            const batchTimestamp = new Date();
+            // UTC ENFORCEMENT: Use UTC timestamp for all DB operations
+            const batchTimestamp = new Date().toISOString();
 
             let retryCount = 0;
             let insertSuccess = false;
@@ -137,6 +138,7 @@ async function runWorker() {
 
                     await processPendingConversions(validClicks, batchTimestamp);
 
+                    // UTC ENFORCEMENT: Use UTC date for stats keys (converted to IST only in business logic)
                     const pipelineStats = redis.pipeline();
                     const today = new Date().toISOString().split('T')[0];
                     for (const c of validClicks) {
@@ -206,6 +208,7 @@ async function runWorker() {
 async function bulkInsertClicks(clicks, batchTimestamp = new Date()) {
     if (clicks.length === 0) return;
 
+    // UTC ENFORCEMENT: All timestamps stored as UTC only. Business logic converts to IST when needed.
     const sql = `INSERT INTO clicks (
         click_uuid, offer_id, publisher_id, publisher_offer_id,
         ip, user_agent, referrer, country, region, city, isp, location, domain,
@@ -221,7 +224,7 @@ async function bulkInsertClicks(clicks, batchTimestamp = new Date()) {
         c.device_type, c.browser, c.os, c.os_version, c.device_brand, c.device_model,
         c.source_id || null, c.device_id || null, c.google_id || null, c.android_id || null,
         c.rcid || null, c.tid || null,
-        new Date(c.timestamp), batchTimestamp
+        c.timestamp, UTC_TIMESTAMP()
     ]);
 
     try {
@@ -252,21 +255,21 @@ async function processPendingConversions(clicks, batchTimestamp = new Date()) {
         if (!err && conversionJson) {
             try {
                 const conv = JSON.parse(conversionJson);
-                // Insert Conversion
+                // Insert Conversion - UTC ENFORCEMENT: All timestamps stored as UTC only
                 await pool.query(
                     `INSERT INTO conversions (
                       conversion_uuid, click_uuid, offer_id, publisher_id, publisher_offer_id,
                       rcid, status, amount, payout, ip, postback_payload, timestamp, created_at, updated_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, UTC_TIMESTAMP(), UTC_TIMESTAMP(), UTC_TIMESTAMP())`,
                     [
                         uuidv4(), // Generate new DB internal ID or use one if we generated?
                         conv.click_uuid, conv.offer_id, conv.publisher_id, conv.publisher_offer_id,
                         conv.rcid, conv.status, conv.amount, conv.payout, conv.ip,
-                        conv.postback_payload, new Date(conv.timestamp), batchTimestamp, batchTimestamp
+                        conv.postback_payload
                     ]
                 );
 
-                // Update Stats (Redis Atomic Counters)
+                // Update Stats (Redis Atomic Counters) - UTC ENFORCEMENT: UTC date for stats keys
                 // stats:offer:{id}:{date}:conversions
                 // stats:offer:{id}:{date}:revenue
                 // stats:offer:{id}:{date}:payout
@@ -326,7 +329,7 @@ async function moveToDeadLetterQueue(entries, options = {}) {
                 validationErrors: entry.errors || null,
                 context,
                 clickData: entry.clickData || {},
-                timestamp: new Date().toISOString()
+                timestamp: new Date().toISOString() // UTC ENFORCEMENT: UTC timestamp for DLQ entries
             };
             pipeline.xadd(dlqKey, '*', 'payload', JSON.stringify(payload));
         }

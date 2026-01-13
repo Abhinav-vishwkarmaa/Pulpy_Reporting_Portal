@@ -8,6 +8,7 @@ const dbConfig = {
   database: process.env.DB_NAME || 'pulpy_reporting',
   user: process.env.DB_USER || 'root',
   password: process.env.DB_PASSWORD ? '***' : '***', // Hide password in logs
+  timezone: '+00:00', // UTC ENFORCEMENT: Force UTC timezone for all connections
   waitForConnections: true,
   connectionLimit: 15,
   queueLimit: 0,
@@ -36,6 +37,7 @@ const pool = mysql.createPool({
   database: process.env.DB_NAME || 'pulpy_reporting',
   user: process.env.DB_USER || 'root',
   password: process.env.DB_PASSWORD || '',
+  timezone: '+00:00', // UTC ENFORCEMENT: Force UTC timezone for all connections
   waitForConnections: true,
   connectionLimit: 15,
   queueLimit: 0,
@@ -61,20 +63,28 @@ pool.on('error', (err) => {
   console.log('='.repeat(80) + '\n');
 });
 
+// Set UTC timezone for all connections (UTC ENFORCEMENT)
+pool.on('connection', (connection) => {
+  connection.query("SET time_zone = '+00:00'");
+});
+
 // Test connection (non-blocking)
 const connectionStartTime = Date.now();
-pool.query('SELECT NOW() as server_time, VERSION() as mysql_version')
+pool.query('SELECT NOW(), UTC_TIMESTAMP(), VERSION()')
   .then(([rows]) => {
     const connectionDuration = Date.now() - connectionStartTime;
     const result = Array.isArray(rows) ? rows[0] : rows;
-    const serverTime = result?.server_time;
-    const mysqlVersion = result?.mysql_version || 'Unknown';
+    const serverTime = result['NOW()'];
+    const utcTime = result['UTC_TIMESTAMP()'];
+    const mysqlVersion = result['VERSION()'] || 'Unknown';
 
     console.log('   ┌─ Connection Test ────────────────────────────────────────────────────');
     console.log('   │ Status: ✅ SUCCESS');
     console.log(`   │ Duration: ${connectionDuration}ms`);
     console.log(`   │ MySQL Version: ${mysqlVersion}`);
-    console.log(`   │ Server Time: ${serverTime}`);
+    console.log(`   │ Server Time (NOW()): ${serverTime}`);
+    console.log(`   │ UTC Time: ${utcTime}`);
+    console.log(`   │ Times Match (UTC enforced): ${serverTime?.getTime() === utcTime?.getTime()}`);
     console.log(`   │ Pool Size: ${pool.pool._allConnections?.length || 0} active connections`);
     console.log('   └────────────────────────────────────────────────────────────────────');
     console.log('='.repeat(80) + '\n');

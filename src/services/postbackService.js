@@ -64,7 +64,7 @@ export class PostbackService {
             finalStatus = (randomValue <= parseFloat(assignment.conversion_approval_percentage)) ? 'approved' : 'pending';
           }
 
-          // 5. Store Conversion in Redis
+          // 5. Store Conversion in Redis - UTC ENFORCEMENT: Store UTC timestamp only
           const conversionData = {
             click_uuid: click_id,
             offer_id: clickData.offer_id,
@@ -224,7 +224,7 @@ export class PostbackService {
       // Extract IP
       const ip = extractIP(request);
 
-      // Store postback payload
+      // Store postback payload - UTC ENFORCEMENT: Store UTC timestamp only
       const postbackPayload = {
         query: query,
         headers: request.headers,
@@ -428,18 +428,16 @@ export class PostbackService {
 
   async updateDailyStats(offerId, revenue, payout) {
     try {
-      // Calculate today in IST (UTC+5:30) for business logic
-      const now = new Date();
-      // Add 5.5 hours to get IST time
-      const istTime = new Date(now.getTime() + (5.5 * 60 * 60 * 1000));
-      const today = istTime.toISOString().split('T')[0];
+      // UTC ENFORCEMENT: Store UTC date in DB. Business logic converts to IST only at query time.
+      // Use CONVERT_TZ(created_at, '+00:00', '+05:30') in queries for IST display
+      const today = new Date().toISOString().split('T')[0];
 
       const profit = revenue - payout;
 
       await pool.query(
         `INSERT INTO daily_offer_stats (offer_id, day, conversions, revenue, payout, profit, created_at, updated_at)
          VALUES (?, ?, 1, ?, ?, ?, UTC_TIMESTAMP(), UTC_TIMESTAMP())
-         ON DUPLICATE KEY UPDATE 
+         ON DUPLICATE KEY UPDATE
            conversions = daily_offer_stats.conversions + 1,
            revenue = daily_offer_stats.revenue + VALUES(revenue),
            payout = daily_offer_stats.payout + VALUES(payout),
@@ -768,8 +766,9 @@ export class PostbackService {
       };
     }
 
+    // UTC ENFORCEMENT: Business logic validation uses IST conversion for time-based checks
+    // Storage remains UTC, only business rules convert to IST
     const now = new Date();
-    // Calculate IST time for business logic checks
     const istTime = new Date(now.getTime() + (5.5 * 60 * 60 * 1000));
     const currentDate = istTime.toISOString().split('T')[0]; // YYYY-MM-DD in IST
     const currentTime = istTime.toISOString().split('T')[1].split('.')[0]; // HH:MM:SS in IST

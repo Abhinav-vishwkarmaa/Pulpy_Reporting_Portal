@@ -147,7 +147,7 @@ export class TrackingService {
         device_model: deviceInfo.deviceModel,
         tid: query.tid || query.click_id || '', // Affiliate ID
         rcid: query.rcid || '',
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString() // UTC ENFORCEMENT: Store UTC timestamp only
       };
 
       const pipeline = redis.pipeline();
@@ -293,7 +293,7 @@ export class TrackingService {
       const userAgent = request.headers['user-agent'] || '';
       const referrer = request.headers.referer || request.headers.referrer || null;
 
-      // Insert impression
+      // Insert impression - UTC ENFORCEMENT: All timestamps stored as UTC
       const impUuid = uuidv4();
       await pool.query(
         `INSERT INTO impressions (
@@ -386,19 +386,15 @@ export class TrackingService {
 
   async updateDailyStats(offerId, publisherId, type) {
     try {
-      // Calculate today in IST (UTC+5:30) for business logic
-      const now = new Date();
-      // Add 5.5 hours to get IST time
-      const istTime = new Date(now.getTime() + (5.5 * 60 * 60 * 1000));
-      const today = istTime.toISOString().split('T')[0];
-      const tz = '+05:30';
+      // UTC ENFORCEMENT: Store UTC date in DB. Business logic converts to IST only at query time.
+      // Use CONVERT_TZ(created_at, '+00:00', '+05:30') in queries for IST display
+      const today = new Date().toISOString().split('T')[0];
 
-      // Upsert daily stats
-      // Upsert daily stats
+      // Upsert daily stats - UTC ENFORCEMENT: Date stored as UTC, uniqueness calculated using IST conversion
       if (type === 'click') {
         const [latestClickRows] = await pool.query(
-          `SELECT ip FROM clicks 
-           WHERE offer_id = ? AND publisher_id = ? 
+          `SELECT ip FROM clicks
+           WHERE offer_id = ? AND publisher_id = ?
            ORDER BY created_at DESC LIMIT 1`,
           [offerId, publisherId]
         );
@@ -409,11 +405,11 @@ export class TrackingService {
         let isUnique = true;
         if (clickIp) {
           const [countRows] = await pool.query(
-            `SELECT COUNT(*) as cnt FROM clicks 
-                 WHERE offer_id = ? 
-                   AND publisher_id = ? 
-                   AND ip = ? 
-                   AND DATE(CONVERT_TZ(created_at, '+00:00', '${tz}')) = ?`,
+            `SELECT COUNT(*) as cnt FROM clicks
+                 WHERE offer_id = ?
+                   AND publisher_id = ?
+                   AND ip = ?
+                   AND DATE(CONVERT_TZ(created_at, '+00:00', '+05:30')) = ?`,
             [offerId, publisherId, clickIp, today]
           );
           const cnt = (Array.isArray(countRows) ? countRows[0] : countRows).cnt;
@@ -423,7 +419,7 @@ export class TrackingService {
         await pool.query(
           `INSERT INTO daily_offer_stats (offer_id, day, clicks, unique_clicks)
            VALUES (?, ?, 1, ?)
-           ON DUPLICATE KEY UPDATE 
+           ON DUPLICATE KEY UPDATE
              clicks = daily_offer_stats.clicks + 1,
              unique_clicks = daily_offer_stats.unique_clicks + (CASE WHEN ? = 1 THEN 1 ELSE 0 END),
              updated_at = UTC_TIMESTAMP()`,
@@ -433,7 +429,7 @@ export class TrackingService {
         await pool.query(
           `INSERT INTO daily_offer_stats (offer_id, day, impressions)
            VALUES (?, ?, 1)
-           ON DUPLICATE KEY UPDATE 
+           ON DUPLICATE KEY UPDATE
              impressions = daily_offer_stats.impressions + 1,
              updated_at = UTC_TIMESTAMP()`,
           [offerId, today]
