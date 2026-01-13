@@ -1,7 +1,7 @@
 module.exports = {
     apps: [
       {
-        name: 'api-server',
+        name: 'Pulpy',
         script: 'src/server.js',
         instances: 'max',
         exec_mode: 'cluster',
