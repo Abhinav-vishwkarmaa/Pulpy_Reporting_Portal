@@ -380,9 +380,4 @@ async function recoverFromDeadLetterQueue() {
 // Manual recovery endpoint (can be called periodically)
 export { recoverFromDeadLetterQueue };
 
-// Auto-start if running directly
-if (process.argv[1] === import.meta.url || process.argv[1].endsWith('redisWorker.js')) {
-    runWorker();
-}
-
 export default runWorker;

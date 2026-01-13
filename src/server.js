@@ -188,16 +188,5 @@ const start = async () => {
   }
 };
 
-import runWorker from './workers/redisWorker.js';
-import startStatsWorker from './workers/statsWorker.js';
-
 start();
-
-// Start Background Worker (Redis Stream Consumer)
-runWorker().catch(err => {
-  console.error('Failed to start Redis Worker:', err);
-});
-
-// Start Stats Worker (Periodic Flush)
-startStatsWorker();
 

@@ -69,14 +69,14 @@ async function flushStats() {
             // Note: We use `clicks = clicks + ?` because we are flushing DELTAS
             const sql = `
                 INSERT INTO daily_offer_stats (offer_id, day, clicks, conversions, revenue, payout, profit, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+                VALUES (?, ?, ?, ?, ?, ?, ?, UTC_TIMESTAMP(), UTC_TIMESTAMP())
                 ON DUPLICATE KEY UPDATE
                     clicks = daily_offer_stats.clicks + ?,
                     conversions = daily_offer_stats.conversions + ?,
                     revenue = daily_offer_stats.revenue + ?,
                     payout = daily_offer_stats.payout + ?,
                     profit = daily_offer_stats.profit + ?,
-                    updated_at = NOW()
+                    updated_at = UTC_TIMESTAMP()
             `;
             const params = [
                 stat.offerId, stat.date, stat.clicks, stat.conversions, stat.revenue, stat.payout, profit,
@@ -94,13 +94,8 @@ async function flushStats() {
 }
 
 function startStatsWorker() {
-    logger.info('📉 Stats Worker Interited (10s interval)');
+    logger.info('📉 Stats Worker Started (10s interval)');
     setInterval(flushStats, FLUSH_INTERVAL);
-}
-
-// Auto-start
-if (process.argv[1] === import.meta.url) {
-    startStatsWorker();
 }
 
 export default startStatsWorker;

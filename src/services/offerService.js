@@ -16,7 +16,7 @@ export class OfferService {
           name, category, advertiser_revenue, affiliate_model_cost,
           start_at, end_at, offer_url, preview_url, capping_per_day, fallback_url,
           status, url_key, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, UTC_TIMESTAMP(), UTC_TIMESTAMP())`,
         [
           data.name,
           data.category,
@@ -362,7 +362,7 @@ export class OfferService {
 
   async updateStatus(id, status) {
     await pool.query(
-      'UPDATE offers SET status = ?, updated_at = NOW() WHERE id = ?',
+      'UPDATE offers SET status = ?, updated_at = UTC_TIMESTAMP() WHERE id = ?',
       [status, id]
     );
     return this.findById(id);
@@ -383,7 +383,7 @@ export class OfferService {
       return this.findById(id);
     }
 
-    fields.push(`updated_at = NOW()`);
+    fields.push(`updated_at = UTC_TIMESTAMP()`);
     params.push(id);
 
     const query = `UPDATE offers SET ${fields.join(', ')} WHERE id = ?`;
@@ -452,7 +452,7 @@ export class OfferService {
 
   async softDelete(id) {
     await pool.query(
-      `UPDATE offers SET status = 'remove', updated_at = NOW() WHERE id = ?`,
+      `UPDATE offers SET status = 'remove', updated_at = UTC_TIMESTAMP() WHERE id = ?`,
       [id]
     );
     return this.findById(id);

@@ -61,7 +61,7 @@ class AdvertiserService {
         return this.getAdvertiserById(id);
       }
 
-      fields.push('updated_at = CURRENT_TIMESTAMP');
+      fields.push('updated_at = UTC_TIMESTAMP()');
       params.push(id);
 
       const sql = `UPDATE advertisers SET ${fields.join(', ')} WHERE id = ?`;
@@ -145,7 +145,7 @@ class AdvertiserService {
     try {
       const sql = `
         UPDATE advertisers
-        SET status = 'inactive', updated_at = CURRENT_TIMESTAMP
+        SET status = 'inactive', updated_at = UTC_TIMESTAMP()
         WHERE id = ?
       `;
       const [result] = await pool.query(sql, [id]);
