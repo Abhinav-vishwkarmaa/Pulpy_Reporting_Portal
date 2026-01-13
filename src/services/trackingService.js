@@ -132,7 +132,11 @@ export class TrackingService {
         country: country_final,
         region: location.region || '',
         city: location.city || '',
-        location: [location.city, location.region, country_final].filter(Boolean).join(', ') || '', // Composite Location
+        location: JSON.stringify({
+            city: location.city,
+            region: location.region,
+            country: country_final
+        }), // Store as JSON
         isp: isp || '',
         domain: domain,
         device_type: deviceInfo.deviceType,

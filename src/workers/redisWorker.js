@@ -9,6 +9,7 @@ const BATCH_TIMEOUT = 1000; // Wait max 1s to fill batch
 const STREAM_KEY = 'stream:clicks';
 const GROUP_NAME = 'workers_group';
 const CONSUMER_NAME = `worker_${process.env.HOSTNAME || 'local'}_${process.pid}`;
+const MAX_RETRY_ATTEMPTS = 3; // Maximum retry attempts for failed inserts
 
 async function setupStream() {
     try {
@@ -83,49 +84,68 @@ async function runWorker() {
             }
 
             if (clicksToInsert.length > 0) {
-                // 1. Bulk Insert Clicks to MySQL
-                // CRITICAL: We MUST wrap this in try/catch to prevent crashing worker entirely
-                // If bulk insert fails, we might process one by one or retry?
-                // Ideally, we retry the batch once, then log and maybe move to DLQ.
-                // For this implementation, we throw and let the worker retry the loop (Stream provides natural retry if not ACKed)
-                try {
-                    await bulkInsertClicks(clicksToInsert);
+                // 1. Bulk Insert Clicks to MySQL with retry logic
+                let retryCount = 0;
+                let insertSuccess = false;
 
-                    // 2. SUCCESS! Now check for Pending Conversions in Redis
-                    // For each successfully inserted click, check if a conversion is waiting
-                    await processPendingConversions(clicksToInsert);
+                while (retryCount < MAX_RETRY_ATTEMPTS && !insertSuccess) {
+                    try {
+                        await bulkInsertClicks(clicksToInsert);
+                        insertSuccess = true;
 
-                    // 3. Stats - Aggregation
-                    // We increment Redis counters for stats, not DB directly here.
-                    // Separate Stats Worker will flush these.
-                    // Implementation:
-                    // redis.incr(`stats:offer:${offerId}:${date}:clicks`)
-                    const pipelineStats = redis.pipeline();
-                    const today = new Date().toISOString().split('T')[0];
-                    for (const c of clicksToInsert) {
-                        // Increment Click Count
-                        pipelineStats.incr(`stats:offer:${c.offer_id}:${today}:clicks`);
-                        pipelineStats.incr(`stats:pub:${c.publisher_id}:${today}:clicks`);
+                        // 2. SUCCESS! Now check for Pending Conversions in Redis
+                        // For each successfully inserted click, check if a conversion is waiting
+                        await processPendingConversions(clicksToInsert);
+
+                        // 3. Stats - Aggregation
+                        // We increment Redis counters for stats, not DB directly here.
+                        // Separate Stats Worker will flush these.
+                        const pipelineStats = redis.pipeline();
+                        const today = new Date().toISOString().split('T')[0];
+                        for (const c of clicksToInsert) {
+                            // Increment Click Count
+                            pipelineStats.incr(`stats:offer:${c.offer_id}:${today}:clicks`);
+                            pipelineStats.incr(`stats:pub:${c.publisher_id}:${today}:clicks`);
+                        }
+                        await pipelineStats.exec();
+
+                        // 4. Cleanup & ACK
+                        const cleanupPipeline = redis.pipeline();
+                        // ACK ONLY after success
+                        cleanupPipeline.xack(STREAM_KEY, GROUP_NAME, ...validMsgIds);
+                        // Remove click keys (TTL will clean them up eventually, but removing frees RAM)
+                        clickIds.forEach(id => cleanupPipeline.del(`click:${id}`));
+                        await cleanupPipeline.exec();
+
+                        logger.info(`✅ Processed Batch: ${clicksToInsert.length} clicks`);
+
+                    } catch (dbErr) {
+                        retryCount++;
+                        const isLastAttempt = retryCount >= MAX_RETRY_ATTEMPTS;
+
+                        logger.error(`❌ BATCH DB INSERT FAILED - ATTEMPT ${retryCount}/${MAX_RETRY_ATTEMPTS}`, {
+                            error: dbErr.message,
+                            sqlMessage: dbErr.sqlMessage,
+                            code: dbErr.code,
+                            batchSize: clicksToInsert.length,
+                            clickIds: clickIds.slice(0, 5),
+                            willRetry: !isLastAttempt,
+                            nextAction: isLastAttempt ? 'MOVE_TO_DLQ' : 'RETRY_WITH_BACKOFF'
+                        });
+
+                        if (isLastAttempt) {
+                            // Move to dead letter queue for manual inspection
+                            await moveToDeadLetterQueue(clicksToInsert, dbErr);
+                            // ACK to prevent infinite retries, but log that data was moved to DLQ
+                            await redis.xack(STREAM_KEY, GROUP_NAME, ...validMsgIds);
+                            logger.error('❌ MAX RETRIES EXCEEDED - MOVED TO DLQ AND ACKED');
+                        } else {
+                            // Exponential backoff: 2^retryCount seconds
+                            const backoffMs = Math.pow(2, retryCount) * 1000;
+                            logger.info(`⏳ RETRYING IN ${backoffMs}ms...`);
+                            await new Promise(r => setTimeout(r, backoffMs));
+                        }
                     }
-                    await pipelineStats.exec();
-
-                    // 4. Cleanup & ACK
-                    const cleanupPipeline = redis.pipeline();
-                    // ACK ONLY after success
-                    cleanupPipeline.xack(STREAM_KEY, GROUP_NAME, ...validMsgIds);
-                    // Remove click keys (TTL will clean them up eventually, but removing frees RAM)
-                    // We keep them if we want to debug, but high volume = delete.
-                    // User said: "Clean Redis keys only after DB success"
-                    clickIds.forEach(id => cleanupPipeline.del(`click:${id}`));
-                    await cleanupPipeline.exec();
-
-                    logger.info(`✅ Processed Batch: ${clicksToInsert.length} clicks`);
-
-                } catch (dbErr) {
-                    logger.error('❌ Batch DB Insert Failed - Will Retry via Stream PEL', dbErr);
-                    // Do NOT Ack. Stream delivery count will increase.
-                    // Sleep a bit to backoff
-                    await new Promise(r => setTimeout(r, 2000));
                 }
             } else {
                 // Empty batch (e.g. malformed data in redis), logic to skip/ack? 
@@ -145,7 +165,61 @@ async function runWorker() {
 async function bulkInsertClicks(clicks) {
     if (clicks.length === 0) return;
 
-    const sql = `INSERT IGNORE INTO clicks (
+    // Validate data integrity before insert
+    const invalidClicks = [];
+    const validClicks = [];
+
+    for (const click of clicks) {
+        const errors = [];
+
+        // Required fields validation
+        if (!click.click_uuid || typeof click.click_uuid !== 'string' || click.click_uuid.length !== 36) {
+            errors.push(`invalid click_uuid: ${click.click_uuid}`);
+        }
+        if (!click.offer_id || isNaN(parseInt(click.offer_id))) {
+            errors.push(`invalid offer_id: ${click.offer_id}`);
+        }
+        if (!click.publisher_id || isNaN(parseInt(click.publisher_id))) {
+            errors.push(`invalid publisher_id: ${click.publisher_id}`);
+        }
+        if (!click.timestamp) {
+            errors.push(`missing timestamp`);
+        }
+
+        // Try to parse timestamp
+        let timestamp;
+        try {
+            timestamp = new Date(click.timestamp);
+            if (isNaN(timestamp.getTime())) {
+                errors.push(`invalid timestamp format: ${click.timestamp}`);
+            }
+        } catch (e) {
+            errors.push(`timestamp parse error: ${e.message}`);
+        }
+
+        if (errors.length > 0) {
+            invalidClicks.push({ click: click.click_uuid || 'unknown', errors });
+        } else {
+            validClicks.push(click);
+        }
+    }
+
+    if (invalidClicks.length > 0) {
+        logger.error('❌ DATA VALIDATION FAILED - INVALID CLICKS FOUND:', {
+            invalidCount: invalidClicks.length,
+            totalClicks: clicks.length,
+            sampleErrors: invalidClicks.slice(0, 3)
+        });
+        // Continue with valid clicks only, but log the invalid ones
+    }
+
+    if (validClicks.length === 0) {
+        logger.error('❌ NO VALID CLICKS TO INSERT');
+        throw new Error('No valid clicks to insert after validation');
+    }
+
+    // Use regular INSERT (not INSERT IGNORE) to ensure constraint violations are caught
+    const sql = `INSERT INTO clicks (
         click_uuid, offer_id, publisher_id, publisher_offer_id,
         ip, user_agent, referrer, country, region, city, isp, location, domain,
         device_type, browser, os, os_version, device_brand, device_model,
@@ -153,8 +227,8 @@ async function bulkInsertClicks(clicks) {
         timestamp, created_at
     ) VALUES ?`;
 
-    const values = clicks.map(c => [
-        c.click_uuid, c.offer_id, c.publisher_id, c.publisher_offer_id,
+    const values = validClicks.map(c => [
+        c.click_uuid, parseInt(c.offer_id), parseInt(c.publisher_id), c.publisher_offer_id ? parseInt(c.publisher_offer_id) : null,
         c.ip, c.user_agent, c.referrer, c.country, c.region || null, c.city || null, c.isp || null, c.location || null, c.domain,
         c.device_type, c.browser, c.os, c.os_version, c.device_brand, c.device_model,
         c.source_id || null, c.device_id || null, c.google_id || null, c.android_id || null,
@@ -165,7 +239,16 @@ async function bulkInsertClicks(clicks) {
     try {
         await pool.query(sql, [values]);
     } catch (err) {
-        logger.error('Bulk Insert Failed', err);
+        logger.error('❌ BULK INSERT FAILED - DETAILED ERROR INFO:', {
+            message: err.message,
+            sqlMessage: err.sqlMessage,
+            code: err.code,
+            errno: err.errno,
+            sqlState: err.sqlState,
+            sql: sql,
+            valuesCount: values.length,
+            firstValueSample: values.length > 0 ? values[0] : null
+        });
         throw err;
     }
 }
@@ -230,6 +313,72 @@ async function processPendingConversions(clicks) {
 }
 
 import { v4 as uuidv4 } from 'uuid';
+
+// Dead Letter Queue for failed inserts
+async function moveToDeadLetterQueue(clicks, error) {
+    try {
+        const dlqKey = 'dlq:clicks';
+        const pipeline = redis.pipeline();
+
+        for (const click of clicks) {
+            const dlqEntry = {
+                click_uuid: click.click_uuid,
+                error: error.message,
+                sqlMessage: error.sqlMessage,
+                code: error.code,
+                timestamp: new Date().toISOString(),
+                clickData: JSON.stringify(click)
+            };
+            pipeline.lpush(dlqKey, JSON.stringify(dlqEntry));
+        }
+
+        await pipeline.exec();
+        logger.warn(`📋 Moved ${clicks.length} clicks to DLQ`);
+    } catch (dlqErr) {
+        logger.error('❌ Failed to move clicks to DLQ:', dlqErr);
+    }
+}
+
+// Recovery function to reprocess DLQ entries
+async function recoverFromDeadLetterQueue() {
+    try {
+        const dlqKey = 'dlq:clicks';
+        const dlqLength = await redis.llen(dlqKey);
+
+        if (dlqLength === 0) {
+            logger.info('✅ DLQ is empty');
+            return;
+        }
+
+        logger.info(`🔄 Recovering ${dlqLength} entries from DLQ`);
+
+        const entries = await redis.lrange(dlqKey, 0, 99); // Process up to 100 at a time
+
+        for (const entryStr of entries) {
+            try {
+                const entry = JSON.parse(entryStr);
+                const clickData = JSON.parse(entry.clickData);
+
+                // Try to insert the click again
+                await bulkInsertClicks([clickData]);
+
+                // If successful, remove from DLQ
+                await redis.lrem(dlqKey, 1, entryStr);
+                logger.info(`✅ Recovered click: ${clickData.click_uuid}`);
+
+            } catch (recoverErr) {
+                logger.error(`❌ Recovery failed for DLQ entry: ${entryStr}`, recoverErr);
+                // Leave in DLQ for manual inspection
+            }
+        }
+
+    } catch (err) {
+        logger.error('❌ DLQ recovery failed:', err);
+    }
+}
+
+// Manual recovery endpoint (can be called periodically)
+export { recoverFromDeadLetterQueue };
 
 // Auto-start if running directly
 if (process.argv[1] === import.meta.url || process.argv[1].endsWith('redisWorker.js')) {
