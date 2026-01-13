@@ -208,7 +208,26 @@ async function runWorker() {
 async function bulkInsertClicks(clicks, batchTimestamp = new Date()) {
     if (clicks.length === 0) return;
 
+    // Validate and sanitize click data before insert
+    const validClicks = clicks.filter(c => {
+        if (!c.click_uuid || !c.offer_id || !c.publisher_id) {
+            logger.warn('❌ Invalid click data - missing required fields:', {
+                click_uuid: c.click_uuid,
+                offer_id: c.offer_id,
+                publisher_id: c.publisher_id
+            });
+            return false;
+        }
+        return true;
+    });
+
+    if (validClicks.length === 0) {
+        logger.warn('❌ No valid clicks to insert after filtering');
+        return;
+    }
+
     // UTC ENFORCEMENT: All timestamps stored as UTC only. Business logic converts to IST when needed.
+    // Column order must match table schema exactly
     const sql = `INSERT INTO clicks (
         click_uuid, offer_id, publisher_id, publisher_offer_id,
         ip, user_agent, referrer, country, region, city, isp, location, domain,
@@ -218,17 +237,28 @@ async function bulkInsertClicks(clicks, batchTimestamp = new Date()) {
     ) VALUES ?
     ON DUPLICATE KEY UPDATE id = id`;
 
-    const values = clicks.map(c => [
-        c.click_uuid, parseInt(c.offer_id), parseInt(c.publisher_id), c.publisher_offer_id ? parseInt(c.publisher_offer_id) : null,
-        c.ip, c.user_agent, c.referrer, c.country, c.region || null, c.city || null, c.isp || null, c.location || null, c.domain,
-        c.device_type, c.browser, c.os, c.os_version, c.device_brand, c.device_model,
-        c.source_id || null, c.device_id || null, c.google_id || null, c.android_id || null,
-        c.rcid || null, c.tid || null,
-        c.timestamp, UTC_TIMESTAMP()
-    ]);
+    // UTC ENFORCEMENT: Database connection is set to UTC timezone, so Date objects will be stored correctly
+    const values = validClicks.map(c => {
+        // Safe parsing with fallbacks
+        const offerId = parseInt(c.offer_id) || 0;
+        const publisherId = parseInt(c.publisher_id) || 0;
+        const publisherOfferId = c.publisher_offer_id ? parseInt(c.publisher_offer_id) : null;
+
+        return [
+            c.click_uuid, offerId, publisherId, publisherOfferId,
+            c.ip || '', c.user_agent || '', c.referrer || '', c.country || '', c.region || null, c.city || null,
+            c.isp || null, c.location || null, c.domain || '',
+            c.device_type || '', c.browser || '', c.os || '', c.os_version || '', c.device_brand || '', c.device_model || '',
+            c.source_id || null, c.device_id || null, c.google_id || null, c.android_id || null,
+            c.rcid || null, c.tid || null,
+            new Date(), new Date() // UTC timestamps - database connection handles timezone conversion
+        ];
+    });
 
     try {
-        await pool.query(sql, [values]);
+        const result = await pool.query(sql, [values]);
+        logger.info(`✅ Successfully inserted ${validClicks.length} clicks`);
+        return result;
     } catch (err) {
         logger.error('❌ BULK INSERT FAILED - DETAILED ERROR INFO:', {
             message: err.message,
@@ -236,9 +266,10 @@ async function bulkInsertClicks(clicks, batchTimestamp = new Date()) {
             errno: err.errno,
             sqlState: err.sqlState,
             sqlMessage: err.sqlMessage,
-            sql: sql,
+            sql: sql.substring(0, 200) + '...', // Truncate long SQL
             valuesCount: values.length,
-            firstValueSample: values[0]
+            firstValueSample: values[0],
+            invalidClicksFiltered: clicks.length - validClicks.length
         });
         throw err;
     }
@@ -260,12 +291,12 @@ async function processPendingConversions(clicks, batchTimestamp = new Date()) {
                     `INSERT INTO conversions (
                       conversion_uuid, click_uuid, offer_id, publisher_id, publisher_offer_id,
                       rcid, status, amount, payout, ip, postback_payload, timestamp, created_at, updated_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, UTC_TIMESTAMP(), UTC_TIMESTAMP(), UTC_TIMESTAMP())`,
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
                     [
                         uuidv4(), // Generate new DB internal ID or use one if we generated?
                         conv.click_uuid, conv.offer_id, conv.publisher_id, conv.publisher_offer_id,
                         conv.rcid, conv.status, conv.amount, conv.payout, conv.ip,
-                        conv.postback_payload
+                        conv.postback_payload, new Date(), new Date(), new Date()
                     ]
                 );
 
