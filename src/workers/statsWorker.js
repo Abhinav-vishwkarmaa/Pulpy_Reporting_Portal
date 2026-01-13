@@ -59,6 +59,9 @@ async function flushStats() {
 
         logger.info(`📊 Flushing Stats for ${updateList.length} offers...`);
 
+        // Generate a single timestamp for the entire batch to ensure consistency
+        const batchTimestamp = new Date();
+
         // Bulk Upsert into MySQL
         // We do one query per row or construct a complex INSERT ... ON DUPLICATE KEY UPDATE
         // For simplicity and safety, sequential async queries (batched) or a transaction.
@@ -69,18 +72,19 @@ async function flushStats() {
             // Note: We use `clicks = clicks + ?` because we are flushing DELTAS
             const sql = `
                 INSERT INTO daily_offer_stats (offer_id, day, clicks, conversions, revenue, payout, profit, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, UTC_TIMESTAMP(), UTC_TIMESTAMP())
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON DUPLICATE KEY UPDATE
                     clicks = daily_offer_stats.clicks + ?,
                     conversions = daily_offer_stats.conversions + ?,
                     revenue = daily_offer_stats.revenue + ?,
                     payout = daily_offer_stats.payout + ?,
                     profit = daily_offer_stats.profit + ?,
-                    updated_at = UTC_TIMESTAMP()
+                    updated_at = ?
             `;
             const params = [
                 stat.offerId, stat.date, stat.clicks, stat.conversions, stat.revenue, stat.payout, profit,
-                stat.clicks, stat.conversions, stat.revenue, stat.payout, profit
+                batchTimestamp, batchTimestamp,
+                stat.clicks, stat.conversions, stat.revenue, stat.payout, profit, batchTimestamp
             ];
 
             await pool.query(sql, params);

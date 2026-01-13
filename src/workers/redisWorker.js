@@ -95,7 +95,7 @@ async function runWorker() {
 
                         // 2. SUCCESS! Now check for Pending Conversions in Redis
                         // For each successfully inserted click, check if a conversion is waiting
-                        await processPendingConversions(clicksToInsert);
+                        await processPendingConversions(clicksToInsert, batchTimestamp);
 
                         // 3. Stats - Aggregation
                         // We increment Redis counters for stats, not DB directly here.
@@ -165,6 +165,9 @@ async function runWorker() {
 async function bulkInsertClicks(clicks) {
     if (clicks.length === 0) return;
 
+    // Generate a single timestamp for the entire batch to ensure consistency
+    const batchTimestamp = new Date();
+
     // Validate data integrity before insert
     const invalidClicks = [];
     const validClicks = [];
@@ -233,7 +236,7 @@ async function bulkInsertClicks(clicks) {
         c.device_type, c.browser, c.os, c.os_version, c.device_brand, c.device_model,
         c.source_id || null, c.device_id || null, c.google_id || null, c.android_id || null,
         c.rcid || null, c.tid || null,
-        new Date(c.timestamp), new Date() // timestamp, created_at
+        new Date(c.timestamp), batchTimestamp // timestamp from click data, created_at uses batch timestamp
     ]);
 
     try {
@@ -253,7 +256,7 @@ async function bulkInsertClicks(clicks) {
     }
 }
 
-async function processPendingConversions(clicks) {
+async function processPendingConversions(clicks, batchTimestamp) {
     // Check Redis for conversion:{click_id}
     const pipeline = redis.pipeline();
     clicks.forEach(c => pipeline.get(`conversion:${c.click_uuid}`));
@@ -269,12 +272,12 @@ async function processPendingConversions(clicks) {
                     `INSERT INTO conversions (
                       conversion_uuid, click_uuid, offer_id, publisher_id, publisher_offer_id,
                       rcid, status, amount, payout, ip, postback_payload, timestamp, created_at, updated_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, UTC_TIMESTAMP(), UTC_TIMESTAMP())`,
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
                     [
                         uuidv4(), // Generate new DB internal ID or use one if we generated?
                         conv.click_uuid, conv.offer_id, conv.publisher_id, conv.publisher_offer_id,
                         conv.rcid, conv.status, conv.amount, conv.payout, conv.ip,
-                        conv.postback_payload, new Date(conv.timestamp)
+                        conv.postback_payload, new Date(conv.timestamp), batchTimestamp, batchTimestamp
                     ]
                 );
 
